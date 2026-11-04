@@ -35,7 +35,6 @@ Zikky speaks the standard Subsonic API with JSON responses:
 - `ping` — login validation.
 - `getAlbumList2` + `getAlbum` — build the song and album catalogue.
 - `search3` — server-side search.
-- `getArtists` / `getArtist` / `getAlbum` — collection browsing.
 - `getStarred2` — favourites.
 - `getPlaylists` / `getPlaylist` — playlists.
 - `updatePlaylist` — add or remove tracks.
