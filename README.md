@@ -62,12 +62,12 @@ digital-display nod to the portable players that made music feel physical.
 
 ## Screenshots
 
-| Home | Now Playing |
-| --- | --- |
+| Home                                                                      | Now Playing                                                                             |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | <img src="docs/screenshots/home.png" width="280" alt="Zikky Home screen"> | <img src="docs/screenshots/now-playing.png" width="280" alt="Zikky Now Playing screen"> |
 
-| Library | Search |
-| --- | --- |
+| Library                                                                         | Search                                                                        |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | <img src="docs/screenshots/library.png" width="280" alt="Zikky Library screen"> | <img src="docs/screenshots/search.png" width="280" alt="Zikky Search screen"> |
 
 Screenshots show a real library. Album artwork and track metadata belong to
