@@ -24,6 +24,7 @@ that feels good to use every day.
 ## Contents
 
 - [Why Zikky](#why-zikky)
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [How Zikky works](#how-zikky-works)
 - [Requirements](#requirements)
@@ -58,6 +59,19 @@ Most music apps treat your library as a rental. Zikky treats it as a library.
 
 The app has a dark, artwork-first interface with a green accent and a small
 digital-display nod to the portable players that made music feel physical.
+
+## Screenshots
+
+| Home | Now Playing |
+| --- | --- |
+| <img src="docs/screenshots/home.png" width="280" alt="Zikky Home screen"> | <img src="docs/screenshots/now-playing.png" width="280" alt="Zikky Now Playing screen"> |
+
+| Library | Search |
+| --- | --- |
+| <img src="docs/screenshots/library.png" width="280" alt="Zikky Library screen"> | <img src="docs/screenshots/search.png" width="280" alt="Zikky Search screen"> |
+
+Screenshots show a real library. Album artwork and track metadata belong to
+their respective owners.
 
 ## Features
 
