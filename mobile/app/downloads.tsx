@@ -95,7 +95,7 @@ export default function Downloads() {
             <Icon name="phone" size={20} color={colors.accent} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[type.numeric, { color: colors.text, fontSize: 20 }]}>
+            <Text style={[type.count, { color: colors.text }]}>
               {complete.length} {complete.length === 1 ? "track" : "tracks"}
             </Text>
             <Text

@@ -121,4 +121,11 @@ export const type = {
     fontWeight: "600" as const,
     letterSpacing: 0.6,
   },
+  count: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "800" as const,
+    fontVariant: ["tabular-nums"] as ("tabular-nums" | "small-caps")[],
+    letterSpacing: -0.3,
+  },
 } as const;

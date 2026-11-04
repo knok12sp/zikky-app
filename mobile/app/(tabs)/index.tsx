@@ -270,7 +270,12 @@ export default function Home() {
                 : `${later.length} ${later.length === 1 ? "track" : "tracks"} saved for later`}
             </Text>
           </View>
-          <Text style={[type.numeric, { color: colors.text, fontSize: 16 }]}>
+          <Text
+            style={[
+              type.count,
+              { color: colors.text, fontSize: 16, lineHeight: 20 },
+            ]}
+          >
             {later.length}
           </Text>
           <Icon name="chevronRight" size={20} color={colors.faint} />
@@ -320,9 +325,7 @@ export default function Home() {
         <Card inset padding={spacing.lg}>
           <View style={{ flexDirection: "row", gap: spacing.xl }}>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text
-                style={[type.numeric, { color: colors.text, fontSize: 20 }]}
-              >
+              <Text style={[type.count, { color: colors.text }]}>
                 {songs.isPending ? "—" : (songs.data?.length ?? 0)}
               </Text>
               <Text
@@ -335,9 +338,7 @@ export default function Home() {
               </Text>
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text
-                style={[type.numeric, { color: colors.text, fontSize: 20 }]}
-              >
+              <Text style={[type.count, { color: colors.text }]}>
                 {onPhone}
               </Text>
               <Text
@@ -408,9 +409,6 @@ export default function Home() {
           message="Cached metadata and completed phone downloads remain available."
         />
       )}
-      <Text style={[type.meta, { color: colors.faint, textAlign: "center" }]}>
-        {session ? session.api.activeServer.replace(/^https?:\/\//, "") : ""}
-      </Text>
     </Page>
   );
 }
