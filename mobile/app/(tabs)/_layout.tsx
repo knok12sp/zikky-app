@@ -1,10 +1,12 @@
 import { Tabs, BottomTabBar } from "expo-router/js-tabs";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../src/ui";
 import { MiniPlayer } from "../../src/components";
 import { Icon, IconName } from "../../src/icon";
 export default function Layout() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
     <Tabs
       tabBar={(props) => (
@@ -27,15 +29,14 @@ export default function Layout() {
           backgroundColor: colors.surface,
           borderTopWidth: 0,
           elevation: 0,
-          height: 56,
-          paddingTop: 4,
+          height: 60 + insets.bottom,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: "700",
-          letterSpacing: 0.7,
+          letterSpacing: 0.5,
         },
-        tabBarItemStyle: { paddingVertical: 2 },
       }}
     >
       {["index", "library", "search"].map((name, i) => (
@@ -47,9 +48,9 @@ export default function Layout() {
             tabBarIcon: ({ color, focused }) => (
               <View
                 style={{
-                  width: 42,
-                  height: 26,
-                  borderRadius: 13,
+                  width: 46,
+                  height: 28,
+                  borderRadius: 14,
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: focused ? colors.accentSoft : "transparent",
@@ -59,7 +60,7 @@ export default function Layout() {
                   name={
                     (["home", "library", "search"] as IconName[])[i] ?? "note"
                   }
-                  size={18}
+                  size={21}
                   color={typeof color === "string" ? color : colors.muted}
                 />
               </View>
