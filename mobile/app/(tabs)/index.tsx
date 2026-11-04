@@ -305,8 +305,8 @@ export default function Home() {
                   New corners of your library
                 </Text>
                 <Text style={[type.meta, { color: colors.muted }]}>
-                  Suggestions stay on the server. Nothing plays until you choose
-                  it.
+                  A random selection from your library. Nothing plays until you
+                  choose it.
                 </Text>
               </View>
               <Icon name="chevronRight" size={20} color={colors.faint} />
