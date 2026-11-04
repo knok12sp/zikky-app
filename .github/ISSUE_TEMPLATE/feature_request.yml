@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest a listening improvement or a new capability
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first, then the proposed solution. Zikky deliberately
+        keeps server storage, streaming and phone downloads separate; proposals
+        should preserve that distinction.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the listening or management situation, not only the UI.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Library browsing
+        - Search
+        - Playback and queue
+        - Playlists and favourites
+        - Offline downloads
+        - Settings and connection
+        - Accessibility
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: This request does not require a paid service or a new account.
+          required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/knok12sp/Zikky/security/advisories/new
+    about: Report security problems privately. Never post secrets or private addresses publicly.
+  - name: Setup and usage questions
+    url: https://github.com/knok12sp/Zikky/discussions
+    about: Ask for help with installation, networking or configuration.

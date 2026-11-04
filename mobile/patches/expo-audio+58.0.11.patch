@@ -1,0 +1,1464 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
+@@ -899,16 +899,20 @@
+     Class(AudioPlaylist::class) {
+       Constructor { sources: List<AudioSource>, updateInterval: Double, loop: LoopMode ->
+         runOnMain {
++          val playlistHeaders = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
+           val playlist = AudioPlaylist(
+             context,
+             appContext,
+             sources,
+             updateInterval,
+-            DefaultDataSource.Factory(context)
++            androidx.media3.datasource.ResolvingDataSource.Factory(DefaultDataSource.Factory(context)) { spec ->
++              spec.withRequestHeaders(playlistHeaders[spec.uri.toString()] ?: emptyMap())
++            }
+           )
+           playlist.loopMode = loop
+           playlist.setMediaItemCreator { source ->
+             source.uri?.let { uriString ->
++              playlistHeaders[uriString] = source.headers ?: emptyMap()
+               val uri = uriString.toUri()
+               when {
+                 isRawResource(uri) -> {
+@@ -1091,6 +1095,13 @@
+           playlist.isPaused = false
+           releaseAudioFocusIfUnused()
+         }
++      }
++
++      Function("setSleepTimer") { ref: AudioPlaylist, seconds: Double ->
++        runOnMain { ref.setSleepTimer(seconds) }
++      }
++      Function("setSleepAfterTrack") { ref: AudioPlaylist, enabled: Boolean ->
++        runOnMain { ref.setSleepAfterTrack(enabled) }
+       }
+ 
+       Function("setActiveForLockScreen") { ref: AudioPlaylist, active: Boolean, metadata: Metadata?, options: AudioLockScreenOptions? ->
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlaylist.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlaylist.kt
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlaylist.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlaylist.kt
+@@ -6,17 +6,21 @@
+ import androidx.media3.common.PlaybackException
+ import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
++import androidx.media3.datasource.DataSource
+ import androidx.media3.exoplayer.ExoPlayer
+ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+-import androidx.media3.datasource.DataSource
+ import androidx.media3.session.MediaSession
+ import expo.modules.audio.service.AudioPlaybackServiceConnection
+ import expo.modules.kotlin.AppContext
+ import java.lang.ref.WeakReference
+-
+-private const val PLAYLIST_STATUS_UPDATE = "playlistStatusUpdate"
+-private const val TRACK_CHANGED = "trackChanged"
+-
++import java.net.HttpURLConnection
++import java.net.URL
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++
++/** The native source list owns order. Only its current item is given to ExoPlayer. */
+ @UnstableApi
+ class AudioPlaylist(
+   context: Context,
+@@ -33,226 +37,236 @@
+     .build(),
+   appContext = appContext,
+   updateInterval = updateInterval,
+-  statusEventName = PLAYLIST_STATUS_UPDATE
+-),
+-  LockScreenPlayable {
+-  private var sources: MutableList<AudioSource> = initialSources.toMutableList()
++  statusEventName = "playlistStatusUpdate"
++), LockScreenPlayable {
++  private val sources = initialSources.toMutableList()
++  private val gate = PlaybackGate()
++  private var selected = 0
++  private var loadedSource: AudioSource? = null
++  private var pendingPosition = 0.0
++  private var acquisition: Job? = null
++  private var loading = false
++  private var pauseCount = 0L
+   private var currentRate = 1f
+-  private var previousMediaItemIndex = 0
++  private var repeat = LoopMode.NONE
++  private var createMediaItemForSource: ((AudioSource) -> MediaItem?)? = null
++  private val sleepHandler = android.os.Handler(ref.applicationLooper)
++  private var sleepRunnable: Runnable? = null
+ 
+   override var isActiveForLockScreen = false
+   override var metadata: Metadata? = null
+   override var lockScreenOptions: AudioLockScreenOptions? = null
+-  override var mediaSession: MediaSession = buildBasicMediaSession(context, ref) { requestPlay() }
++  override var mediaSession: MediaSession = buildBasicMediaSession(context, ref, onPause = { pause() }, onNext = { next() }, onPrevious = { previous() }) { requestPlay() }
+   override val serviceConnection = AudioPlaybackServiceConnection(WeakReference(this), appContext)
+   override val supportsNextTrack = true
+   override val supportsPreviousTrack = true
+-
+-  val currentTrackIndex get() = ref.currentMediaItemIndex
+-  val trackCount get() = ref.mediaItemCount
+-
+-  private var createMediaItemForSource: ((AudioSource) -> MediaItem?)? = null
++  val currentTrackIndex get() = selected
++  val trackCount get() = sources.size
++  override val isPlaying get() = gate.wantsPlayback
++  override val currentTime get() = if (loadedSource == null) pendingPosition else ref.currentPosition / 1000.0
++  override val duration get() = if (loadedSource == null) 0.0 else (if (ref.duration == androidx.media3.common.C.TIME_UNSET) 0.0 else ref.duration / 1000.0)
+ 
+   init {
+     installPlayerListeners()
+     startUpdating()
+-  }
+-
+-  fun setMediaItemCreator(creator: (AudioSource) -> MediaItem?) {
+-    this.createMediaItemForSource = creator
+-  }
+-
+-  fun loadInitialPlaylist() {
+-    val validSources = mutableListOf<AudioSource>()
+-    sources.forEach { source ->
+-      createMediaItemForSource?.invoke(source)?.let { mediaItem ->
+-        validSources.add(source)
+-        ref.addMediaItem(mediaItem)
++    ref.addListener(object : Player.Listener {
++      override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
++        if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY) pause()
++      }
++    })
++  }
++
++  fun setMediaItemCreator(creator: (AudioSource) -> MediaItem?) { createMediaItemForSource = creator }
++  fun loadInitialPlaylist() { sendStatusUpdate() }
++  fun getSources(): List<AudioSource> = sources.toList()
++
++  var loopMode: LoopMode
++    get() = repeat
++    set(value) { repeat = value; sendStatusUpdate() }
++
++  override fun play() {
++    if (sources.isEmpty()) return
++    gate.play()
++    if (loadedSource === sources.getOrNull(selected)) {
++      if (ref.playbackState == Player.STATE_ENDED) ref.seekTo(0)
++      ref.prepare()
++      ref.play()
++    } else if (!loading) activateCurrent()
++    sendStatusUpdate()
++  }
++
++  override fun pause() {
++    pauseCount++
++    gate.pause()
++    acquisition?.cancel()
++    acquisition = null
++    loading = false
++    ref.pause()
++    sendStatusUpdate()
++  }
++
++  private fun invalidateCurrent() {
++    gate.invalidate()
++    acquisition?.cancel()
++    acquisition = null
++    loading = false
++    loadedSource = null
++    ref.pause()
++    ref.clearMediaItems()
++  }
++
++  private fun activateCurrent() {
++    val source = sources.getOrNull(selected) ?: return
++    val ticket = gate.ticket(selected)
++    loading = true
++    metadata = source.metadata
++    if (isActiveForLockScreen) source.metadata?.let { updateLockScreenMetadata(it) }
++    sendStatusUpdate()
++    acquisition = playerScope.launch {
++      try {
++        source.acquireUrl?.let { target ->
++          withContext(Dispatchers.IO) {
++            val uri = URL(source.uri)
++            val url = URL(target)
++            require(url.protocol in listOf("http", "https") && url.protocol == uri.protocol && url.host == uri.host && url.port == uri.port) { "Acquisition must use the media server" }
++            val connection = url.openConnection() as HttpURLConnection
++            try {
++              connection.instanceFollowRedirects = false
++              connection.requestMethod = "POST"
++              connection.connectTimeout = 15000
++              connection.readTimeout = 30000
++              source.headers?.forEach { (key, value) -> connection.setRequestProperty(key, value) }
++              connection.setRequestProperty("X-Zikky-Client", "native-v1")
++              check(connection.responseCode in 200..299) { "Server acquisition rejected" }
++            } finally { connection.disconnect() }
++          }
++        }
++        if (!gate.accepts(ticket, selected) || sources.getOrNull(selected) !== source) return@launch
++        val item = createMediaItemForSource?.invoke(source) ?: error("Invalid audio source")
++        loadedSource = source
++        loading = false
++        ref.setMediaItem(item, (pendingPosition * 1000).toLong())
++        ref.setPlaybackSpeed(currentRate)
++        ref.prepare()
++        ref.play()
++        sendStatusUpdate()
++      } catch (error: kotlinx.coroutines.CancellationException) { throw error }
++      catch (_: Exception) {
++        if (gate.accepts(ticket, selected)) {
++          gate.pause()
++          loading = false
++          sendStatusUpdate(mapOf("error" to mapOf("message" to "Cannot acquire or play this track. Retry playback.")))
++        }
+       }
+     }
+-    sources = validSources
+-    ref.prepare()
+-  }
+-
+-  var loopMode: LoopMode
+-    get() = when (ref.repeatMode) {
+-      Player.REPEAT_MODE_ONE -> LoopMode.SINGLE
+-      Player.REPEAT_MODE_ALL -> LoopMode.ALL
+-      else -> LoopMode.NONE
++  }
++
++  fun skipTo(index: Int) {
++    if (index !in sources.indices) return
++    val previous = selected
++    invalidateCurrent()
++    selected = index
++    pendingPosition = 0.0
++    metadata = sources[index].metadata
++    if (isActiveForLockScreen) metadata?.let { updateLockScreenMetadata(it) }
++    emit("trackChanged", mapOf("previousIndex" to previous, "currentIndex" to selected))
++    if (gate.wantsPlayback) activateCurrent()
++    sendStatusUpdate()
++  }
++  fun next() {
++    if (selected + 1 < sources.size) skipTo(selected + 1)
++    else if (repeat == LoopMode.ALL && sources.isNotEmpty()) skipTo(0)
++  }
++  fun previous() {
++    if (selected > 0) skipTo(selected - 1)
++    else if (repeat == LoopMode.ALL && sources.isNotEmpty()) skipTo(sources.lastIndex)
++  }
++  override fun nextTrack() = next()
++  override fun previousTrack() = previous()
++  override fun seekTo(seconds: Double) {
++    pendingPosition = seconds.coerceAtLeast(0.0)
++    if (loadedSource != null) ref.seekTo((pendingPosition * 1000).toLong())
++    sendStatusUpdate()
++  }
++  fun add(source: AudioSource) { sources.add(source); sendStatusUpdate() }
++  fun insert(source: AudioSource, index: Int) {
++    if (index !in 0..sources.size) return
++    val restart = index <= selected && loading && gate.wantsPlayback
++    if (restart) invalidateCurrent()
++    sources.add(index, source)
++    if (sources.size > 1 && index <= selected) selected++
++    if (restart) activateCurrent()
++    sendStatusUpdate()
++  }
++  fun remove(index: Int) {
++    if (index !in sources.indices) return
++    val removingCurrent = index == selected
++    val restart = index < selected && loading && gate.wantsPlayback
++    if (restart) invalidateCurrent()
++    sources.removeAt(index)
++    if (sources.isEmpty()) { clear(); return }
++    if (removingCurrent) skipTo(selected.coerceAtMost(sources.lastIndex))
++    else {
++      if (index < selected) selected--
++      if (restart) activateCurrent()
++      sendStatusUpdate()
+     }
+-    set(value) {
+-      ref.repeatMode = when (value) {
+-        LoopMode.SINGLE -> Player.REPEAT_MODE_ONE
+-        LoopMode.ALL -> Player.REPEAT_MODE_ALL
+-        LoopMode.NONE -> Player.REPEAT_MODE_OFF
+-      }
+-      sendStatusUpdate(mapOf("loop" to value.value))
+-    }
+-
+-  fun getSources(): List<AudioSource> {
+-    return sources.toList()
+-  }
+-
+-  override fun onLoadingChanged(isLoading: Boolean) {
+-    sendStatusUpdate(mapOf("isLoaded" to (ref.playbackState == Player.STATE_READY)))
+-  }
+-
+-  override fun onMediaItemChanged(mediaItem: MediaItem?, reason: Int) {
+-    val currentIndex = ref.currentMediaItemIndex
+-    if (currentIndex != previousMediaItemIndex) {
+-      emitTrackChanged(previousMediaItemIndex, currentIndex)
+-      previousMediaItemIndex = currentIndex
+-    }
+-    sendStatusUpdate()
+-  }
+-
++  }
++  fun clear() {
++    gate.pause()
++    invalidateCurrent()
++    sources.clear()
++    selected = 0
++    pendingPosition = 0.0
++    sendStatusUpdate()
++  }
++  override fun onPlaybackStateUpdated(playbackState: Int, justFinished: Boolean) {
++    if (justFinished && loadedSource != null && gate.wantsPlayback) {
++      if (gate.finishTrack()) { sendStatusUpdate(mapOf("didJustFinish" to true)); return }
++      if (repeat == LoopMode.SINGLE) skipTo(selected)
++      else if (selected + 1 < sources.size) skipTo(selected + 1)
++      else if (repeat == LoopMode.ALL) skipTo(0)
++      else { gate.pause(); sendStatusUpdate(mapOf("didJustFinish" to true)) }
++    } else sendStatusUpdate()
++  }
++  override fun onMediaItemChanged(mediaItem: MediaItem?, reason: Int) { sendStatusUpdate() }
+   override fun onPlayerError(error: PlaybackException) {
+-    sendStatusUpdate(
+-      mapOf(
+-        "error" to mapOf(
+-          "message" to error.message,
+-          "code" to error.errorCode
+-        )
+-      )
+-    )
+-  }
+-
+-  fun next() {
+-    if (ref.hasNextMediaItem()) {
+-      ref.seekToNextMediaItem()
+-    } else if (loopMode == LoopMode.ALL && trackCount > 0) {
+-      ref.seekToDefaultPosition(0)
+-    }
+-  }
+-
+-  fun previous() {
+-    if (ref.hasPreviousMediaItem()) {
+-      ref.seekToPreviousMediaItem()
+-    } else if (loopMode == LoopMode.ALL && trackCount > 0) {
+-      ref.seekToDefaultPosition(trackCount - 1)
+-    }
+-  }
+-
+-  override fun nextTrack() {
+-    next()
+-  }
+-
+-  override fun previousTrack() {
+-    previous()
+-  }
+-
+-  fun skipTo(index: Int) {
+-    if (index !in 0..<trackCount) {
+-      return
+-    }
+-    ref.seekToDefaultPosition(index)
+-  }
+-
+-  fun add(source: AudioSource) {
+-    val mediaItem = createMediaItemForSource?.invoke(source) ?: return
+-    sources.add(source)
+-    ref.addMediaItem(mediaItem)
+-    sendStatusUpdate(mapOf("trackCount" to trackCount))
+-  }
+-
+-  fun insert(source: AudioSource, index: Int) {
+-    if (index !in 0..trackCount) {
+-      return
+-    }
+-    val mediaItem = createMediaItemForSource?.invoke(source) ?: return
+-    sources.add(index, source)
+-    ref.addMediaItem(index, mediaItem)
+-    sendStatusUpdate(mapOf("trackCount" to trackCount))
+-  }
+-
+-  fun remove(index: Int) {
+-    if (index !in 0..<trackCount) {
+-      return
+-    }
+-
+-    sources.removeAt(index)
+-    ref.removeMediaItem(index)
+-
+-    sendStatusUpdate(mapOf("trackCount" to trackCount))
+-  }
+-
+-  fun clear() {
+-    ref.pause()
+-    ref.clearMediaItems()
+-    sources.clear()
+-
+-    sendStatusUpdate(
+-      mapOf(
+-        "trackCount" to 0,
+-        "currentIndex" to 0,
+-        "playing" to false
+-      )
+-    )
+-  }
+-
++    gate.pause()
++    loading = false
++    sendStatusUpdate(mapOf("error" to mapOf("message" to "Audio playback failed. Retry playback.")))
++  }
++  override fun onLoadingChanged(isLoading: Boolean) { sendStatusUpdate() }
+   override fun setPlaybackRate(rate: Float) {
+-    val boundedRate = rate.coerceIn(0.1f, 2.0f)
+-    currentRate = boundedRate
+-    ref.setPlaybackSpeed(boundedRate)
+-  }
+-
++    currentRate = rate.coerceIn(0.1f, 2f)
++    ref.setPlaybackSpeed(currentRate)
++  }
++  fun setSleepTimer(seconds: Double) {
++    sleepRunnable?.let { sleepHandler.removeCallbacks(it) }
++    sleepRunnable = if (seconds > 0) Runnable { sleepRunnable = null; pause() } else null
++    sleepRunnable?.let { sleepHandler.postDelayed(it, (seconds * 1000).toLong()) }
++  }
++  fun setSleepAfterTrack(enabled: Boolean) { gate.stopAfterTrack = enabled; sendStatusUpdate() }
+   override fun assignBasicMediaSession() {
+     mediaSession.release()
+-    mediaSession = buildBasicMediaSession(appContext?.reactContext ?: return, ref) { requestPlay() }
+-  }
+-
+-  override fun currentStatus(): Map<String, Any?> {
+-    val isMuted = ref.volume == 0f
+-    val isLoaded = ref.playbackState == Player.STATE_READY
+-    val isBuffering = ref.playbackState == Player.STATE_BUFFERING
+-    val playingStatus = if (isBuffering) {
+-      intendedPlayingState
+-    } else {
+-      ref.isPlaying
+-    }
+-
+-    return mapOf(
+-      "id" to id,
+-      "currentIndex" to currentTrackIndex,
+-      "trackCount" to trackCount,
+-      "currentTime" to currentTime,
+-      "duration" to duration,
+-      "playing" to playingStatus,
+-      "isBuffering" to isBuffering,
+-      "isLoaded" to if (ref.playbackState == Player.STATE_ENDED) {
+-        true
+-      } else {
+-        isLoaded
+-      },
+-      "playbackRate" to if (ref.isPlaying) {
+-        ref.playbackParameters.speed
+-      } else {
+-        currentRate
+-      },
+-      "muted" to isMuted,
+-      "volume" to ref.volume,
+-      "loop" to loopMode.value,
+-      "didJustFinish" to false
+-    )
+-  }
+-
+-  private fun emitTrackChanged(previousIndex: Int, currentIndex: Int) {
+-    emit(
+-      TRACK_CHANGED,
+-      mapOf(
+-        "previousIndex" to previousIndex,
+-        "currentIndex" to currentIndex
+-      )
+-    )
+-    sendStatusUpdate()
+-  }
+-
++    mediaSession = buildBasicMediaSession(appContext?.reactContext ?: return, ref, onPause = { pause() }, onNext = { next() }, onPrevious = { previous() }) { requestPlay() }
++  }
++  override fun currentStatus(): Map<String, Any?> = mapOf(
++    "entryKey" to sources.getOrNull(selected)?.entryKey, "pauseCount" to pauseCount,
++    "sleepAfterTrack" to gate.stopAfterTrack,
++    "sleepTimerActive" to (sleepRunnable != null),
++    "id" to id, "currentIndex" to selected, "trackCount" to sources.size,
++    "currentTime" to currentTime, "duration" to duration,
++    "playing" to gate.wantsPlayback, "isBuffering" to (loading || ref.playbackState == Player.STATE_BUFFERING),
++    "isLoaded" to (loadedSource != null && ref.playbackState == Player.STATE_READY),
++    "playbackRate" to currentRate, "muted" to (ref.volume == 0f), "volume" to ref.volume,
++    "loop" to repeat.value, "didJustFinish" to false
++  )
+   override fun releasePlayer() {
++    pause()
++    setSleepTimer(0.0)
+     serviceConnection.release()
+     mediaSession.release()
+-    if (isActiveForLockScreen) {
+-      serviceConnection.playbackServiceBinder?.service?.unregisterPlayable()
+-    }
++    if (isActiveForLockScreen) serviceConnection.playbackServiceBinder?.service?.unregisterPlayable()
+     serviceConnection.unbind()
+     super.releasePlayer()
+   }
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecords.kt
+@@ -13,7 +13,10 @@
+ class AudioSource(
+   @Field val uri: String?,
+   @Field val headers: Map<String, String>?,
+-  @Field val name: String? = null
++  @Field val name: String? = null,
++  @Field val metadata: Metadata? = null,
++  @Field val acquireUrl: String? = null,
++  @Field val entryKey: String? = null
+ ) : Record
+ 
+ enum class LoopMode(val value: String) : Enumerable {
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioUtils.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioUtils.kt
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioUtils.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioUtils.kt
+@@ -34,8 +34,8 @@
+ }
+ 
+ @OptIn(UnstableApi::class)
+-fun buildBasicMediaSession(context: Context, player: Player, onPlay: () -> Unit): MediaSession {
+-  return MediaSession.Builder(context, PlayRequestingPlayer(player, onPlay))
++fun buildBasicMediaSession(context: Context, player: Player, onPause: (() -> Unit)? = null, onNext: (() -> Unit)? = null, onPrevious: (() -> Unit)? = null, onPlay: () -> Unit): MediaSession {
++  return MediaSession.Builder(context, PlayRequestingPlayer(player, onPlay, onPause, onNext, onPrevious))
+     .setId("ExpoAudioBasicMediaSession_${player.hashCode()}")
+     .build()
+ }
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/PlayRequestingPlayer.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/PlayRequestingPlayer.kt
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/PlayRequestingPlayer.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/PlayRequestingPlayer.kt
+@@ -10,15 +10,30 @@
+ @UnstableApi
+ internal class PlayRequestingPlayer(
+   player: Player,
+-  private val onPlay: () -> Unit
++  private val onPlay: () -> Unit,
++  private val onPause: (() -> Unit)? = null,
++  private val onNext: (() -> Unit)? = null,
++  private val onPrevious: (() -> Unit)? = null
+ ) : ForwardingPlayer(player) {
+   override fun play() = onPlay()
++  override fun pause() { onPause?.invoke() ?: super.pause() }
++  override fun seekToNext() { onNext?.invoke() ?: super.seekToNext() }
++  override fun seekToNextMediaItem() { onNext?.invoke() ?: super.seekToNextMediaItem() }
++  override fun seekToPrevious() { onPrevious?.invoke() ?: super.seekToPrevious() }
++  override fun seekToPreviousMediaItem() { onPrevious?.invoke() ?: super.seekToPreviousMediaItem() }
++
++  override fun getAvailableCommands(): Player.Commands {
++    val commands = super.getAvailableCommands().buildUpon()
++    if (onNext != null) commands.addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
++    if (onPrevious != null) commands.addAll(Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
++    return commands.build()
++  }
+ 
+   override fun setPlayWhenReady(playWhenReady: Boolean) {
+     if (playWhenReady) {
+       onPlay()
+     } else {
+-      super.setPlayWhenReady(false)
++      pause()
+     }
+   }
+ }
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/PlaybackGate.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/PlaybackGate.kt
+new file mode 100644
+--- /dev/null
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/PlaybackGate.kt
+@@ -0,0 +1,21 @@
++package expo.modules.audio
++
++/** Invalidates asynchronous acquisition replies when the user pauses, skips or clears. */
++internal class PlaybackGate {
++  data class Ticket(val revision: Long, val index: Int)
++  private var revision = 0L
++  var wantsPlayback = false
++    private set
++  var stopAfterTrack = false
++  fun finishTrack(): Boolean {
++    if (!wantsPlayback || !stopAfterTrack) return false
++    stopAfterTrack = false
++    pause()
++    return true
++  }
++  fun play() { wantsPlayback = true }
++  fun invalidate() { revision++ }
++  fun pause() { wantsPlayback = false; invalidate() }
++  fun ticket(index: Int) = Ticket(revision, index)
++  fun accepts(ticket: Ticket, index: Int) = wantsPlayback && ticket.revision == revision && ticket.index == index
++}
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+@@ -82,10 +82,10 @@
+             playable.requestPlay()
+           }
+         }
+-        ACTION_PAUSE -> currentPlayer.pause()
++        ACTION_PAUSE -> playable.pause()
+         ACTION_TOGGLE ->
+-          if (currentPlayer.isPlaying) {
+-            currentPlayer.pause()
++          if (playable.isPlaying) {
++            playable.pause()
+           } else if (shouldPlayInSilentMode()) {
+             playable.requestPlay()
+           }
+@@ -401,7 +401,9 @@
+   }
+ 
+   private fun resolveSessionPlayer(playable: LockScreenPlayable, options: AudioLockScreenOptions?): Player {
+-    val player = PlayRequestingPlayer(playable.player) { playable.requestPlay() }
++    val player = PlayRequestingPlayer(playable.player, onPlay = { playable.requestPlay() }, onPause = { playable.pause() },
++      onNext = if (playable.supportsNextTrack) ({ playable.nextTrack() }) else null,
++      onPrevious = if (playable.supportsPreviousTrack) ({ playable.previousTrack() }) else null)
+     val isLive = options?.isLiveStream ?: playable.isLive
+     val forwardMs = seekIntervalMs(options?.seekForwardIntervalSeconds)
+     val backwardMs = seekIntervalMs(options?.seekBackwardIntervalSeconds)
+diff --git a/node_modules/expo-audio/android/src/test/java/expo/modules/audio/PlayRequestingPlayerTest.kt b/node_modules/expo-audio/android/src/test/java/expo/modules/audio/PlayRequestingPlayerTest.kt
+new file mode 100644
+--- /dev/null
++++ b/node_modules/expo-audio/android/src/test/java/expo/modules/audio/PlayRequestingPlayerTest.kt
+@@ -0,0 +1,35 @@
++package expo.modules.audio
++
++import androidx.media3.common.Player
++import java.lang.reflect.Proxy
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class PlayRequestingPlayerTest {
++  @Test fun mediaButtonsUsePlaylistIntentAndQueue() {
++    val rawCalls = mutableListOf<String>()
++    val raw = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) { _, method, _ ->
++      rawCalls.add(method.name)
++      when (method.returnType) {
++        java.lang.Boolean.TYPE -> false
++        java.lang.Integer.TYPE -> 0
++        java.lang.Long.TYPE -> 0L
++        else -> null
++      }
++    } as Player
++    val actions = mutableListOf<String>()
++    val player = PlayRequestingPlayer(raw,
++      onPlay = { actions.add("play") }, onPause = { actions.add("pause") },
++      onNext = { actions.add("next") }, onPrevious = { actions.add("previous") })
++    player.play()
++    player.pause()
++    player.setPlayWhenReady(true)
++    player.setPlayWhenReady(false)
++    player.seekToNext()
++    player.seekToNextMediaItem()
++    player.seekToPrevious()
++    player.seekToPreviousMediaItem()
++    assertEquals(listOf("play", "pause", "play", "pause", "next", "next", "previous", "previous"), actions)
++    assertEquals(emptyList<String>(), rawCalls)
++  }
++}
+diff --git a/node_modules/expo-audio/android/src/test/java/expo/modules/audio/PlaybackGateTest.kt b/node_modules/expo-audio/android/src/test/java/expo/modules/audio/PlaybackGateTest.kt
+new file mode 100644
+--- /dev/null
++++ b/node_modules/expo-audio/android/src/test/java/expo/modules/audio/PlaybackGateTest.kt
+@@ -0,0 +1,33 @@
++package expo.modules.audio
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class PlaybackGateTest {
++  @Test fun pausedQueueNeverAuthorizesAcquisition() {
++    val gate = PlaybackGate()
++    assertFalse(gate.accepts(gate.ticket(0), 0))
++    gate.invalidate()
++    assertFalse(gate.wantsPlayback)
++  }
++  @Test fun pauseDiscardsLateAcquisitionEvenAfterResume() {
++    val gate = PlaybackGate()
++    gate.play()
++    val old = gate.ticket(0)
++    assertTrue(gate.accepts(old, 0))
++    gate.pause()
++    gate.play()
++    assertFalse(gate.accepts(old, 0))
++    assertTrue(gate.accepts(gate.ticket(0), 0))
++  }
++  @Test fun skippingAndClearingInvalidateInFlightWork() {
++    val gate = PlaybackGate()
++    gate.play()
++    val old = gate.ticket(0)
++    gate.invalidate()
++    assertFalse(gate.accepts(old, 0))
++    assertFalse(gate.accepts(gate.ticket(1), 0))
++    gate.pause()
++    assertFalse(gate.accepts(gate.ticket(0), 0))
++  }
++}
+diff --git a/node_modules/expo-audio/android/src/test/java/expo/modules/audio/SleepAfterTrackTest.kt b/node_modules/expo-audio/android/src/test/java/expo/modules/audio/SleepAfterTrackTest.kt
+new file mode 100644
+--- /dev/null
++++ b/node_modules/expo-audio/android/src/test/java/expo/modules/audio/SleepAfterTrackTest.kt
+@@ -0,0 +1,26 @@
++package expo.modules.audio
++import org.junit.Assert.*
++import org.junit.Test
++class SleepAfterTrackTest {
++  @Test fun finishTimerStopsBeforeAnyRepeatOrNextDecision() {
++    val gate = PlaybackGate()
++    gate.play()
++    gate.stopAfterTrack = true
++    assertTrue(gate.finishTrack())
++    assertFalse(gate.wantsPlayback)
++    assertFalse(gate.stopAfterTrack)
++    assertFalse(gate.finishTrack())
++    gate.play()
++    assertFalse(gate.finishTrack())
++    assertTrue(gate.wantsPlayback)
++  }
++  @Test fun pauseDoesNotConsumeAnArmedEndOfTrackTimer() {
++    val gate = PlaybackGate()
++    gate.stopAfterTrack = true
++    gate.pause()
++    assertFalse(gate.finishTrack())
++    assertTrue(gate.stopAfterTrack)
++    gate.play()
++    assertTrue(gate.finishTrack())
++  }
++}
+diff --git a/node_modules/expo-audio/ios/AudioModule.swift b/node_modules/expo-audio/ios/AudioModule.swift
+--- a/node_modules/expo-audio/ios/AudioModule.swift
++++ b/node_modules/expo-audio/ios/AudioModule.swift
+@@ -309,7 +309,7 @@
+     Class(AudioPlaylist.self) {
+       Constructor { (sources: [AudioSource], updateInterval: Double, loopMode: LoopMode) -> AudioPlaylist in
+         // Keep one slot per source, nil where an item can't be created, so playerItems stays aligned with sources.
+-        let items = sources.map { AudioUtils.createAVPlayerItem(from: $0) }
++        let items = [AVPlayerItem?](repeating: nil, count: sources.count)
+         let avQueuePlayer = AVQueuePlayer(items: items.compactMap { $0 })
+         let playlist = AudioPlaylist(avQueuePlayer, sources: sources, items: items, interval: updateInterval, loopMode: loopMode)
+         playlist.owningRegistry = self.registry
+@@ -423,6 +423,13 @@
+ 
+       Function("clear") { playlist in
+         playlist.clear()
++      }
++
++      Function("setSleepTimer") { (playlist: AudioPlaylist, seconds: Double) in
++        playlist.setSleepTimer(seconds: seconds)
++      }
++      Function("setSleepAfterTrack") { (playlist: AudioPlaylist, enabled: Bool) in
++        playlist.setSleepAfterTrack(enabled: enabled)
+       }
+ 
+       Function("setActiveForLockScreen") { (playlist: AudioPlaylist, active: Bool, metadata: Metadata?, options: LockScreenOptions?) in
+diff --git a/node_modules/expo-audio/ios/AudioPlaylist.swift b/node_modules/expo-audio/ios/AudioPlaylist.swift
+--- a/node_modules/expo-audio/ios/AudioPlaylist.swift
++++ b/node_modules/expo-audio/ios/AudioPlaylist.swift
+@@ -2,433 +2,282 @@
+ import AVFoundation
+ import Combine
+ 
+-private enum PlaylistConstants {
+-  static let playlistStatusUpdate = "playlistStatusUpdate"
+-  static let trackChanged = "trackChanged"
+-}
+-
++// The native source list owns order. Only explicit/continued playback resolves its current URL.
+ public class AudioPlaylist: SharedRef<AVQueuePlayer>, Playable, LockScreenPlayable {
+   let id = UUID().uuidString
+   private let interval: Double
+-  private(set) var currentRate: Float = 1.0
++  private(set) var currentRate: Float = 1
++  var wasPlaying = false
+   var isActiveForLockScreen = false
+   var metadata: Metadata?
+   var lockScreenOptions: LockScreenOptions?
+-
+   var loopMode: LoopMode = .none
+-  var wasPlaying = false
+-
+   private(set) var sources: [AudioSource] = []
+-
+-  private var playerItems: [AVPlayerItem?] = []
+-  private var previousTrackIndex = 0
+-
+-  var currentTrackIndex: Int {
+-    guard let current = ref.currentItem,
+-          let index = playerItems.firstIndex(where: { $0 === current }) else {
+-      return min(max(previousTrackIndex, 0), max(sources.count - 1, 0))
+-    }
+-    return index
+-  }
+-
+-  func getSourceInfo() -> [AudioSource] {
+-    return sources
+-  }
+-
++  private(set) var currentTrackIndex = 0
++  private var loadedIndex: Int?
++  private var pendingPosition: Double = 0
++  private var wantsPlayback = false
++  private var loading = false
++  private var revision = 0
++  private var pauseCount = 0
++  private var acquisition: URLSessionDataTask?
++  private var sleepWorkItem: DispatchWorkItem?
++  private var stopAfterTrack = false
+   private var timeToken: Any?
+   private var cancellables = Set<AnyCancellable>()
+   private var endObserver: NSObjectProtocol?
+-
+   weak var owningRegistry: AudioComponentRegistry?
+ 
++  var trackCount: Int { sources.count }
+   var duration: Double {
+-    let d = ref.currentItem?.duration.seconds ?? 0.0
+-    return d.isNaN ? 0.0 : d
+-  }
+-
++    let value = ref.currentItem?.duration.seconds ?? 0
++    return value.isFinite ? value : 0
++  }
+   var currentTime: Double {
+-    ref.currentItem?.currentTime().seconds ?? 0.0
+-  }
+-
+-  var isLoaded: Bool {
+-    ref.currentItem?.status == .readyToPlay
+-  }
+-
+-  var isPlaying: Bool {
+-    ref.timeControlStatus == .playing
+-  }
+-
+-  var isLive: Bool {
+-    ref.currentItem?.duration.isIndefinite ?? false
+-  }
+-
+-  var lockScreenPlayer: AVPlayer {
+-    ref
+-  }
+-
+-  var supportsNextTrack: Bool {
+-    true
+-  }
+-
+-  var supportsPreviousTrack: Bool {
+-    true
+-  }
+-
+-  var isBuffering: Bool {
+-    ref.isBuffering(isPlaying: isPlaying)
+-  }
+-
+-  var trackCount: Int {
+-    sources.count
+-  }
++    let value = loadedIndex == nil ? pendingPosition : (ref.currentItem?.currentTime().seconds ?? 0)
++    return value.isFinite ? value : 0
++  }
++  var isLoaded: Bool { loadedIndex != nil && ref.currentItem?.status == .readyToPlay }
++  var isPlaying: Bool { wantsPlayback }
++  var isLive: Bool { ref.currentItem?.duration.isIndefinite ?? false }
++  var isBuffering: Bool { loading || ref.isBuffering(isPlaying: wantsPlayback) }
++  var lockScreenPlayer: AVPlayer { ref }
++  var supportsNextTrack: Bool { true }
++  var supportsPreviousTrack: Bool { true }
++  var volume: Float { get { ref.volume } set { ref.volume = newValue } }
+ 
+   init(_ ref: AVQueuePlayer, sources: [AudioSource], items: [AVPlayerItem?], interval: Double, loopMode: LoopMode) {
+     self.interval = interval
++    self.sources = sources
+     self.loopMode = loopMode
+-    self.sources = sources
+-    self.playerItems = items
+     super.init(ref)
+-
+-    ref.actionAtItemEnd = loopMode == .single ? .pause : .advance
++    ref.actionAtItemEnd = .pause
+     setupPublisher()
+     addPlaybackEndNotification()
+   }
++  func getSourceInfo() -> [AudioSource] { sources }
+ 
+   func play(at rate: Float) {
++    guard !sources.isEmpty else { return }
++    wantsPlayback = true
++    currentRate = rate
++    if loadedIndex == currentTrackIndex {
++      if duration > 0 && currentTime >= duration { ref.seek(to: .zero) }
++      ref.playImmediately(atRate: rate)
++    } else if !loading { activateCurrent() }
+     registerTimeObserver()
+-    ref.playImmediately(atRate: rate)
+-
+-    if isActiveForLockScreen {
+-      MediaController.shared.updateNowPlayingInfo(for: self)
+-    }
+-  }
+-
++    updateStatus(with: [:])
++  }
+   func pause() {
++    pauseCount += 1
++    wantsPlayback = false
++    revision += 1
++    acquisition?.cancel()
++    acquisition = nil
++    loading = false
+     ref.pause()
+-
+-    if isActiveForLockScreen {
+-      MediaController.shared.updateNowPlayingInfo(for: self)
+-    }
+-  }
+-
+-  func next() {
+-    if currentTrackIndex < sources.count - 1 {
+-      ref.advanceToNextItem()
+-    } else if loopMode == .all && !sources.isEmpty {
+-      skipTo(index: 0)
+-    }
+-  }
+-
+-  func previous() {
+-    if currentTrackIndex > 0 {
+-      let wasPlaying = isPlaying
+-      rebuildPlaylist(startingAt: currentTrackIndex - 1)
+-      if wasPlaying {
+-        play(at: currentRate)
+-      }
+-    } else if loopMode == .all && !sources.isEmpty {
+-      skipTo(index: sources.count - 1)
+-    }
+-  }
+-
+-  func nextTrack() {
+-    next()
+-  }
+-
+-  func previousTrack() {
+-    previous()
+-  }
+-
+-  func skipTo(index: Int) {
+-    guard validIndex(index) else {
+-      return
+-    }
+-
+-    let wasPlaying = isPlaying
+-    rebuildPlaylist(startingAt: index)
+-
+-    if wasPlaying {
+-      play(at: currentRate)
+-    }
+-  }
+-
+-  func seekTo(seconds: Double) async {
+-    let time = CMTime(seconds: seconds, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+-      ref.seek(to: time) { [weak self] _ in
+-        if let self {
+-          self.updateStatus(with: ["currentTime": self.currentTime])
+-        }
+-        continuation.resume()
+-      }
+-    }
+-  }
+-
+-  func add(source: AudioSource) {
+-    sources.append(source)
+-    let item = AudioUtils.createAVPlayerItem(from: source)
+-    if let item {
+-      ref.insert(item, after: nil)
+-    }
+-    playerItems.append(item)
+-    updateStatus(with: ["trackCount": trackCount])
+-  }
+-
+-  func insert(source: AudioSource, at index: Int) {
+-    guard index >= 0 && index <= sources.count else {
+-      return
+-    }
+-
+-    let wasPlaying = isPlaying
+-    let resumeIndex: Int
+-    if ref.currentItem != nil {
+-      resumeIndex = index <= currentTrackIndex ? currentTrackIndex + 1 : currentTrackIndex
+-    } else {
+-      resumeIndex = index
+-    }
+-    sources.insert(source, at: index)
+-
+-    previousTrackIndex = resumeIndex
+-    rebuildPlaylist(startingAt: resumeIndex)
+-    if wasPlaying {
+-      play(at: currentRate)
+-    }
+-    updateStatus(with: ["trackCount": trackCount])
+-  }
+-
+-  func remove(at index: Int) {
+-    guard validIndex(index) else {
+-      return
+-    }
+-
+-    let wasPlaying = isPlaying
+-    let current = currentTrackIndex
+-    sources.remove(at: index)
+-
+-    if index == current {
+-      let resumeIndex = min(current, max(0, sources.count - 1))
+-      previousTrackIndex = resumeIndex
+-      rebuildPlaylist(startingAt: resumeIndex)
+-      if wasPlaying && !sources.isEmpty {
+-        play(at: currentRate)
+-      }
+-    } else if index < current {
+-      let resumeIndex = current - 1
+-      previousTrackIndex = resumeIndex
+-      rebuildPlaylist(startingAt: resumeIndex)
+-      if wasPlaying {
+-        play(at: currentRate)
+-      }
+-    } else if index < playerItems.count {
+-      if let item = playerItems[index] {
+-        ref.remove(item)
+-      }
+-      playerItems.remove(at: index)
+-    }
+-
+-    updateStatus(with: ["trackCount": trackCount])
+-  }
+-
+-  func clear() {
++    updateStatus(with: [:])
++  }
++  private func invalidateCurrent() {
++    revision += 1
++    acquisition?.cancel()
++    acquisition = nil
++    loading = false
++    loadedIndex = nil
+     ref.pause()
+     ref.removeAllItems()
+-    sources.removeAll()
+-    playerItems.removeAll()
+-    previousTrackIndex = 0
+-
+-    updateStatus(with: [
+-      "trackCount": 0,
+-      "currentIndex": 0,
+-      "playing": false
+-    ])
+-  }
+-
+-  func setLoopMode(_ mode: LoopMode) {
+-    loopMode = mode
+-    ref.actionAtItemEnd = mode == .single ? .pause : .advance
+-    updateStatus(with: ["loop": mode.rawValue])
+-  }
+-
+-  func setPlaybackRate(_ rate: Float) {
+-    let boundedRate = max(0.1, min(rate, 2.0))
+-    currentRate = boundedRate
+-    if isPlaying {
+-      ref.rate = boundedRate
+-    }
+-  }
+-
+-  func setActiveForLockScreen(_ active: Bool = true, metadata: Metadata? = nil, options: LockScreenOptions?) {
+-    self.metadata = metadata
+-    self.isActiveForLockScreen = active
+-    self.lockScreenOptions = active ? options : nil
+-    if active {
+-      MediaController.shared.setActivePlayable(self, options: options)
+-    } else {
+-      MediaController.shared.setActivePlayable(nil)
+-    }
+-  }
+-
+-  func currentStatus() -> [String: Any] {
+-    return [
+-      "id": id,
+-      "currentIndex": currentTrackIndex,
+-      "trackCount": trackCount,
+-      "currentTime": currentTime,
+-      "duration": duration,
+-      "playing": isPlaying,
+-      "isBuffering": isBuffering,
+-      "isLoaded": isLoaded,
+-      "playbackRate": isPlaying ? ref.rate : currentRate,
+-      "muted": ref.isMuted,
+-      "volume": ref.volume,
+-      "loop": loopMode.rawValue,
+-      "didJustFinish": false
+-    ]
+-  }
+-
+-  func updateStatus(with dict: [String: Any]) {
+-    var arguments = currentStatus()
+-    arguments.merge(dict) { _, new in new }
+-    self.emit(event: PlaylistConstants.playlistStatusUpdate, payload: arguments)
+-
+-    if isActiveForLockScreen {
+-      MediaController.shared.updateNowPlayingInfo(for: self)
+-    }
+-  }
+-
+-  private func validIndex(_ index: Int) -> Bool {
+-    return index >= 0 && index < sources.count
+-  }
+-
+-  private func emitTrackChanged(previousIndex: Int, currentIndex: Int) {
+-    self.emit(event: PlaylistConstants.trackChanged, payload: [
+-      "previousIndex": previousIndex,
+-      "currentIndex": currentIndex
+-    ])
+-    updateStatus(with: [:])
+-  }
+-
+-  private func rebuildPlaylist(startingAt index: Int) {
+-    var items = [AVPlayerItem?](repeating: nil, count: sources.count)
+-    for i in index..<sources.count {
+-      items[i] = AudioUtils.createAVPlayerItem(from: sources[i])
+-    }
+-    playerItems = items
+-
+-    ref.removeAllItems()
+-    for i in index..<sources.count {
+-      if let item = items[i] {
+-        ref.insert(item, after: nil)
+-      }
+-    }
+-  }
+-
+-  private func setupPublisher() {
+-    ref.publisher(for: \.currentItem?.status)
+-      .sink { [weak self] status in
+-        guard let self, let status else {
++  }
++  private func activateCurrent() {
++    guard sources.indices.contains(currentTrackIndex) else { return }
++    let source = sources[currentTrackIndex]
++    let ticket = revision
++    let index = currentTrackIndex
++    loading = true
++    metadata = source.metadata
++    updateStatus(with: [:])
++    let finish: (Bool) -> Void = { [weak self] success in
++      DispatchQueue.main.async {
++        guard let self, self.revision == ticket, self.currentTrackIndex == index, self.wantsPlayback else { return }
++        self.acquisition = nil
++        self.loading = false
++        guard success, let item = AudioUtils.createAVPlayerItem(from: source) else {
++          self.wantsPlayback = false
++          self.updateStatus(with: ["error": ["message": "Cannot acquire or play this track. Retry playback."]])
+           return
+         }
+-        if status == .readyToPlay {
+-          self.updateStatus(with: ["isLoaded": true])
++        self.loadedIndex = index
++        self.ref.removeAllItems()
++        self.ref.insert(item, after: nil)
++        let position = CMTime(seconds: self.pendingPosition, preferredTimescale: 1000)
++        self.ref.seek(to: position) { [weak self] _ in
++          DispatchQueue.main.async {
++            guard let self, self.revision == ticket, self.currentTrackIndex == index, self.wantsPlayback else { return }
++            self.ref.playImmediately(atRate: self.currentRate)
++            self.updateStatus(with: [:])
++          }
+         }
+-      }
+-      .store(in: &cancellables)
+-
+-    ref.publisher(for: \.currentItem)
+-      .sink { [weak self] _ in
+-        guard let self else {
+-          return
+-        }
+-        let index = self.currentTrackIndex
+-        if index != self.previousTrackIndex {
+-          self.emitTrackChanged(previousIndex: self.previousTrackIndex, currentIndex: index)
+-          self.previousTrackIndex = index
+-        } else {
+-          self.updateStatus(with: [:])
+-        }
+-      }
+-      .store(in: &cancellables)
+-  }
+-
++        self.updateStatus(with: [:])
++      }
++    }
++    guard let target = source.acquireUrl else { finish(true); return }
++    guard let media = source.uri,
++          ["http", "https"].contains(target.scheme ?? ""), target.scheme == media.scheme,
++          target.host == media.host, target.port == media.port else { finish(false); return }
++    var request = URLRequest(url: target)
++    request.httpMethod = "POST"
++    request.timeoutInterval = 30
++    source.headers?.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
++    request.setValue("native-v1", forHTTPHeaderField: "X-Zikky-Client")
++    acquisition = URLSession.shared.dataTask(with: request) { _, response, error in
++      let status = (response as? HTTPURLResponse)?.statusCode ?? 0
++      finish(error == nil && (200..<300).contains(status))
++    }
++    acquisition?.resume()
++  }
++  func skipTo(index: Int) {
++    guard sources.indices.contains(index) else { return }
++    let previous = currentTrackIndex
++    invalidateCurrent()
++    currentTrackIndex = index
++    pendingPosition = 0
++    metadata = sources[index].metadata
++    emit(event: "trackChanged", payload: ["previousIndex": previous, "currentIndex": index])
++    if wantsPlayback { activateCurrent() }
++    updateStatus(with: [:])
++  }
++  func next() {
++    if currentTrackIndex + 1 < sources.count { skipTo(index: currentTrackIndex + 1) }
++    else if loopMode == .all && !sources.isEmpty { skipTo(index: 0) }
++  }
++  func previous() {
++    if currentTrackIndex > 0 { skipTo(index: currentTrackIndex - 1) }
++    else if loopMode == .all && !sources.isEmpty { skipTo(index: sources.count - 1) }
++  }
++  func nextTrack() { next() }
++  func previousTrack() { previous() }
++  func resumePlayback() { play(at: currentRate) }
++  func seekTo(seconds: Double) async {
++    pendingPosition = seconds.isFinite ? max(0, seconds) : 0
++    if loadedIndex != nil {
++      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
++        ref.seek(to: CMTime(seconds: pendingPosition, preferredTimescale: 1000)) { _ in continuation.resume() }
++      }
++    }
++    updateStatus(with: [:])
++  }
++  func add(source: AudioSource) { sources.append(source); updateStatus(with: [:]) }
++  func insert(source: AudioSource, at index: Int) {
++    guard index >= 0 && index <= sources.count else { return }
++    let restart = index <= currentTrackIndex && loading && wantsPlayback
++    if restart { invalidateCurrent() }
++    sources.insert(source, at: index)
++    if sources.count > 1 && index <= currentTrackIndex {
++      currentTrackIndex += 1
++      if let loaded = loadedIndex { loadedIndex = loaded + 1 }
++    }
++    if restart { activateCurrent() }
++    updateStatus(with: [:])
++  }
++  func remove(at index: Int) {
++    guard sources.indices.contains(index) else { return }
++    let removingCurrent = index == currentTrackIndex
++    let restart = index < currentTrackIndex && loading && wantsPlayback
++    if restart { invalidateCurrent() }
++    sources.remove(at: index)
++    if sources.isEmpty { clear(); return }
++    if removingCurrent { skipTo(index: min(currentTrackIndex, sources.count - 1)) }
++    else if index < currentTrackIndex {
++      currentTrackIndex -= 1
++      if let loaded = loadedIndex { loadedIndex = loaded - 1 }
++      if restart { activateCurrent() }
++    }
++    updateStatus(with: [:])
++  }
++  func clear() {
++    wantsPlayback = false
++    invalidateCurrent()
++    sources.removeAll()
++    currentTrackIndex = 0
++    pendingPosition = 0
++    updateStatus(with: [:])
++  }
++  func setLoopMode(_ mode: LoopMode) { loopMode = mode; updateStatus(with: [:]) }
++  func setPlaybackRate(_ rate: Float) {
++    currentRate = max(0.1, min(rate, 2))
++    if wantsPlayback && loadedIndex != nil { ref.rate = currentRate }
++  }
++  func setSleepTimer(seconds: Double) {
++    sleepWorkItem?.cancel()
++    sleepWorkItem = nil
++    if seconds > 0 {
++      let work = DispatchWorkItem { [weak self] in
++        guard let self else { return }
++        self.sleepWorkItem = nil
++        self.pause()
++      }
++      sleepWorkItem = work
++      DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
++    }
++  }
++  func setSleepAfterTrack(enabled: Bool) { stopAfterTrack = enabled; updateStatus(with: [:]) }
++  func setActiveForLockScreen(_ active: Bool = true, metadata: Metadata? = nil, options: LockScreenOptions?) {
++    self.metadata = sources.indices.contains(currentTrackIndex) ? sources[currentTrackIndex].metadata ?? metadata : metadata
++    isActiveForLockScreen = active
++    lockScreenOptions = active ? options : nil
++    MediaController.shared.setActivePlayable(active ? self : nil, options: options)
++  }
++  func currentStatus() -> [String: Any] {
++    ["entryKey": sources.indices.contains(currentTrackIndex) ? (sources[currentTrackIndex].entryKey ?? "") : "",
++     "id": id, "pauseCount": pauseCount, "sleepAfterTrack": stopAfterTrack, "sleepTimerActive": sleepWorkItem != nil, "currentIndex": currentTrackIndex, "trackCount": trackCount,
++     "currentTime": currentTime, "duration": duration, "playing": wantsPlayback,
++     "isBuffering": isBuffering, "isLoaded": isLoaded, "playbackRate": currentRate,
++     "muted": ref.isMuted, "volume": ref.volume, "loop": loopMode.rawValue, "didJustFinish": false]
++  }
++  func updateStatus(with dict: [String: Any]) {
++    var status = currentStatus()
++    status.merge(dict) { _, new in new }
++    emit(event: "playlistStatusUpdate", payload: status)
++    if isActiveForLockScreen { MediaController.shared.updateNowPlayingInfo(for: self) }
++  }
++  private func setupPublisher() {
++    ref.publisher(for: \.currentItem?.status).sink { [weak self] status in
++      guard let self else { return }
++      if status == .failed {
++        self.wantsPlayback = false
++        self.updateStatus(with: ["error": ["message": "Audio playback failed. Retry playback."]])
++      } else { self.updateStatus(with: [:]) }
++    }.store(in: &cancellables)
++  }
+   private func addPlaybackEndNotification() {
+-    endObserver = NotificationCenter.default.addObserver(
+-      forName: .AVPlayerItemDidPlayToEndTime,
+-      object: nil,
+-      queue: nil
+-    ) { [weak self] notification in
+-      guard let self,
+-            let item = notification.object as? AVPlayerItem,
+-            let finishedIndex = self.playerItems.firstIndex(where: { $0 === item }) else {
++    endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] notification in
++      guard let self, let item = notification.object as? AVPlayerItem,
++            item === self.ref.currentItem, self.wantsPlayback else { return }
++      if self.stopAfterTrack {
++        self.stopAfterTrack = false
++        self.wantsPlayback = false
++        self.ref.pause()
++        self.updateStatus(with: ["didJustFinish": true])
+         return
+       }
+-
+-      let isLastTrack = finishedIndex >= self.sources.count - 1
+-
+-      switch self.loopMode {
+-      case .single:
+-        self.ref.seek(to: .zero)
+-        self.play(at: self.currentRate)
+-
+-      case .all:
+-        if isLastTrack {
+-          self.skipTo(index: 0)
+-          self.play(at: self.currentRate)
+-        }
+-
+-      case .none:
+-        if isLastTrack {
+-          self.updateStatus(with: [
+-            "playing": false,
+-            "didJustFinish": true
+-          ])
+-        }
+-      }
+-    }
+-  }
+-
++      if self.loopMode == .single { self.skipTo(index: self.currentTrackIndex) }
++      else if self.currentTrackIndex + 1 < self.sources.count { self.skipTo(index: self.currentTrackIndex + 1) }
++      else if self.loopMode == .all { self.skipTo(index: 0) }
++      else { self.wantsPlayback = false; self.updateStatus(with: ["didJustFinish": true]) }
++    }
++  }
+   private func registerTimeObserver() {
+-    if let timeToken {
+-      ref.removeTimeObserver(timeToken)
+-    }
+-
+-    let updateInterval = interval / 1000
+-    let interval = CMTime(seconds: updateInterval, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+-
+-    timeToken = ref.addPeriodicTimeObserver(forInterval: interval, queue: nil) { [weak self] time in
+-      guard let self else {
+-        return
+-      }
+-      self.updateStatus(with: ["currentTime": time.seconds])
+-    }
+-  }
+-
+-  var volume: Float {
+-    get { ref.volume }
+-    set { ref.volume = newValue }
+-  }
+-
+-  func resumePlayback() {
+-    play(at: currentRate)
+-  }
+-
++    guard timeToken == nil else { return }
++    timeToken = ref.addPeriodicTimeObserver(forInterval: CMTime(seconds: interval / 1000, preferredTimescale: 1000), queue: .main) { [weak self] _ in self?.updateStatus(with: [:]) }
++  }
+   public override func sharedObjectWillRelease() {
+-    ref.currentItem?.cancelPendingSeeks()
++    revision += 1
++    acquisition?.cancel()
++    setSleepTimer(seconds: 0)
+     owningRegistry?.remove(self)
+     cancellables.removeAll()
+-
+-    if let timeToken {
+-      ref.removeTimeObserver(timeToken)
+-    }
+-
+-    if let endObserver {
+-      NotificationCenter.default.removeObserver(endObserver)
+-    }
+-
+-    if isActiveForLockScreen {
+-      MediaController.shared.setActivePlayable(nil)
+-    }
+-
++    if let timeToken { ref.removeTimeObserver(timeToken) }
++    if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
++    if isActiveForLockScreen { MediaController.shared.setActivePlayable(nil) }
+     ref.pause()
+     ref.removeAllItems()
+   }
+diff --git a/node_modules/expo-audio/ios/AudioSource.swift b/node_modules/expo-audio/ios/AudioSource.swift
+--- a/node_modules/expo-audio/ios/AudioSource.swift
++++ b/node_modules/expo-audio/ios/AudioSource.swift
+@@ -10,4 +10,13 @@
+ 
+   @Field
+   var name: String?
++
++  @Field
++  var metadata: Metadata?
++
++  @Field
++  var acquireUrl: URL?
++
++  @Field
++  var entryKey: String?
+ }
+diff --git a/node_modules/expo-audio/ios/MediaController.swift b/node_modules/expo-audio/ios/MediaController.swift
+--- a/node_modules/expo-audio/ios/MediaController.swift
++++ b/node_modules/expo-audio/ios/MediaController.swift
+@@ -256,6 +256,12 @@
+   }
+ 
+   private func loadArtworkFromURL(url: URL, completion: @escaping (MPMediaItemArtwork?) -> Void) {
++    if url.isFileURL {
++      if let image = UIImage(contentsOfFile: url.path) {
++        completion(MPMediaItemArtwork(boundsSize: image.size) { _ in image })
++      } else { completion(nil) }
++      return
++    }
+     URLSession.shared.dataTask(with: url) { data, _, error in
+       if error != nil {
+         self.performOnMain {

@@ -1,0 +1,57 @@
+# Dependencies and toolchain caches
+node_modules/
+**/node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+coverage/
+*.tsbuildinfo
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.p8
+*.pem
+*.key
+*.mobileprovision
+*.ipa
+*.apk
+*.aab
+*.idsig
+*.xcarchive
+
+# Generated native projects
+mobile/android/
+mobile/ios/
+
+# Local library data, downloads and backups
+music-data/
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Release and debugging artifacts
+artifacts/
+*.log
+npm-audit*.json
+qa-*-native-tests.json
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

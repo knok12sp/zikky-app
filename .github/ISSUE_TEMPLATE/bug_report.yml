@@ -1,0 +1,80 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please remove private server addresses, credentials,
+        tokens and library details from logs and screenshots.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android
+        - iOS
+        - Both
+        - Server compatibility
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Zikky version or commit
+      placeholder: 0.5.0 or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and OS version
+      placeholder: Pixel 8 / Android 16, or iPhone 15 / iOS 19
+  - type: dropdown
+    id: install
+    attributes:
+      label: Server software
+      options:
+        - Navidrome
+        - Airsonic / Airsonic-Advanced
+        - Gonic
+        - Other Subsonic-compatible server
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitised logs
+      description: Remove personal addresses, usernames and tokens before pasting.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed credentials and private information.
+          required: true
