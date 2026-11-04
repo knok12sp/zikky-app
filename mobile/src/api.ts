@@ -87,26 +87,38 @@ export function parseSong(value: unknown): Song {
 }
 export function parseSongs(value: unknown): Song[] {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error("Invalid song list.");
+  if (!Array.isArray(value)) {
+    if (value && typeof value === "object") return [parseSong(value)];
+    throw new Error("Invalid song list.");
+  }
   return value.map(parseSong);
 }
 export function parsePlaylists(value: unknown): Playlist[] {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error("Invalid playlist list.");
-  return value.map((p) => {
+  if (!Array.isArray(value)) {
+    if (value && typeof value === "object") value = [value];
+    else throw new Error("Invalid playlist list.");
+  }
+  return (value as unknown[]).map((raw) => {
+    const p = raw as {
+      id?: unknown;
+      name?: unknown;
+      songCount?: unknown;
+      entry?: unknown;
+    };
     if (
       !p ||
       typeof p.id !== "string" ||
       !p.id ||
       typeof p.name !== "string" ||
       !Number.isInteger(p.songCount) ||
-      p.songCount < 0
+      (p.songCount as number) < 0
     )
       throw new Error("Invalid playlist metadata.");
     return {
       id: p.id,
       name: p.name,
-      songCount: p.songCount,
+      songCount: p.songCount as number,
       ...(p.entry !== undefined ? { entry: parseSongs(p.entry) } : {}),
     };
   });
@@ -398,20 +410,41 @@ export class Api {
     };
   }
   async mediaInfo(id: string, signal?: AbortSignal) {
-    const response: Response = await this.request(this.mediaPath(id), {
-      method: "HEAD",
-      signal,
-    });
-    const size = Number(response.headers.get("content-length"));
-    if (!Number.isSafeInteger(size) || size <= 128)
-      throw new Error("Server did not provide a valid audio size.");
-    return {
-      size,
-      etag:
+    const path = this.mediaPath(id);
+    let size = 0;
+    let etag = "";
+    try {
+      const response: Response = await this.request(path, {
+        method: "HEAD",
+        signal,
+      });
+      size = Number(response.headers.get("content-length"));
+      etag =
         response.headers.get("etag") ??
         response.headers.get("last-modified") ??
-        "",
-    };
+        "";
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Some servers reject HEAD; a one-byte range request is the fallback.
+    }
+    if (!Number.isSafeInteger(size) || size <= 128) {
+      const response = await fetch(this.url(path), {
+        headers: { ...this.headers(), Range: "bytes=0-0" },
+        signal,
+      });
+      if (!response.ok)
+        throw new Error("Server did not provide a valid audio size.");
+      const range = response.headers.get("content-range");
+      size = Number(range?.split("/").pop());
+      etag =
+        response.headers.get("etag") ??
+        response.headers.get("last-modified") ??
+        "";
+      response.body?.cancel().catch(() => {});
+    }
+    if (!Number.isSafeInteger(size) || size <= 128)
+      throw new Error("Server did not provide a valid audio size.");
+    return { size, etag };
   }
   private mediaPath(id: string) {
     const query = this.authQuery();

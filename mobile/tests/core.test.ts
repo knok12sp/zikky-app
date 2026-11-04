@@ -4,6 +4,7 @@ import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import {
   Api,
   parseSong,
+  parseSongs,
   normalizeServer,
   normalizeServers,
   addressOrder,
@@ -353,6 +354,10 @@ describe("audit regressions", () => {
     expect(() => parseSong({ ...songs[0], audioReady: "true" })).toThrow(
       "storage status",
     );
+    expect(parseSongs(songs[0])).toHaveLength(1);
+    expect(
+      parsePlaylists({ id: "p", name: "List", songCount: 1 }),
+    ).toHaveLength(1);
   });
   it("does not issue requests for an already cancelled search", async () => {
     const fetch = vi.fn();
@@ -419,6 +424,27 @@ describe("audit regressions", () => {
     await expect(api.request("/health")).rejects.not.toThrow(
       "secret-bearing-url",
     );
+  });
+});
+
+it("falls back to a one-byte range request when HEAD has no usable size", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(new Response("", { status: 405 }))
+    .mockResolvedValueOnce(
+      new Response(null, {
+        status: 206,
+        headers: { "Content-Range": "bytes 0-0/4096", ETag: '"audio-v2"' },
+      }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  expect(await new Api(credentials).mediaInfo("one")).toEqual({
+    size: 4096,
+    etag: '"audio-v2"',
+  });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch.mock.calls[1]![1]).toMatchObject({
+    headers: expect.objectContaining({ Range: "bytes=0-0" }),
   });
 });
 
