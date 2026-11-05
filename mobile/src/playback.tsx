@@ -75,25 +75,28 @@ function useController() {
   }
   const artworkPaths = useRef<Record<string, string>>({});
   const artworkPending = useRef(new Map<string, Promise<string | undefined>>());
+  const artworkId = (song: Song) => song.coverArt ?? song.id;
   async function art(song: Song) {
     if (
       offline.local(song.id) &&
       (await FS.getInfoAsync(offline.artwork(song.id))).exists
     )
       return offline.artwork(song.id);
-    const pendingArt = artworkPending.current.get(song.id);
+    const id = artworkId(song);
+    const pendingArt = artworkPending.current.get(id);
     if (pendingArt) return pendingArt;
     const task = fetchArtwork(song);
-    artworkPending.current.set(song.id, task);
+    artworkPending.current.set(id, task);
     try {
       return await task;
     } finally {
-      artworkPending.current.delete(song.id);
+      artworkPending.current.delete(id);
     }
   }
   async function fetchArtwork(song: Song): Promise<string | undefined> {
+    const id = artworkId(song);
     const dir = FS.cacheDirectory + scope + "/art/";
-    const path = dir + encodeURIComponent(song.id) + ".jpg";
+    const path = dir + encodeURIComponent(id) + ".jpg";
     try {
       await FS.makeDirectoryAsync(dir, { intermediates: true });
       if (!(await FS.getInfoAsync(path)).exists) {
@@ -103,7 +106,7 @@ function useController() {
           const temporary = path + ".part";
           try {
             const result = await FS.downloadAsync(
-              api.artwork(song.id, address).uri,
+              api.artwork(id, address).uri,
               temporary,
               { headers: api.headers() },
             );
@@ -123,7 +126,7 @@ function useController() {
         }
         if (!saved) return undefined;
       }
-      artworkPaths.current[song.id] = path;
+      artworkPaths.current[id] = path;
       return path;
     } catch {
       return undefined;
@@ -134,14 +137,11 @@ function useController() {
       title: song.title,
       artist: song.artist,
       albumTitle: song.album,
+      // Only point the lock screen at artwork that already exists; the status
+      // listener refreshes it once the background download completes.
       artworkUrl: offline.local(song.id)
         ? offline.artwork(song.id)
-        : (artworkPaths.current[song.id] ??
-          FS.cacheDirectory +
-            scope +
-            "/art/" +
-            encodeURIComponent(song.id) +
-            ".jpg"),
+        : artworkPaths.current[artworkId(song)],
     };
   }
   async function load(q: Queue, play: boolean) {
@@ -184,9 +184,6 @@ function useController() {
           "Playback could not start. Check server connectivity and retry.",
         );
     }
-  }
-  async function checkServerRoute(signal?: AbortSignal) {
-    await api.rest("ping", {}, signal);
   }
   useEffect(() => {
     const token = generation.current;
@@ -297,10 +294,6 @@ function useController() {
     try {
       controller.signal.throwIfAborted();
       await ensureAudio();
-      if (!offline.local(selected.id))
-        await checkServerRoute(controller.signal);
-      // Native playback resolves only the entry it actually starts, including cold queue entries.
-      void art(selected);
       controller.signal.throwIfAborted();
       const q = collection(songs, index);
       await load(q, true);
@@ -384,8 +377,6 @@ function useController() {
       try {
         await ensureAudio();
         const current = ref.current.entries[ref.current.index]!;
-        if (!offline.local(current.song.id))
-          await checkServerRoute(controller.signal);
         if (controller.signal.aborted || token !== generation.current) return;
         if (
           !offline.local(current.song.id) &&
@@ -429,9 +420,6 @@ function useController() {
       setBusy("Retrying playback…");
       try {
         await ensureAudio();
-        const current = ref.current.entries[ref.current.index]!;
-        if (!offline.local(current.song.id))
-          await checkServerRoute(controller.signal);
         if (controller.signal.aborted || token !== generation.current) return;
         await load(ref.current, true);
       } catch (e) {

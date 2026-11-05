@@ -123,6 +123,15 @@ describe("API trust boundaries", () => {
       "Login rejected",
     );
   });
+  it("keeps artwork and stream URLs stable across renders for image caching", () => {
+    const api = new Api(credentials);
+    const first = api.artwork("cover");
+    expect(api.artwork("cover").uri).toBe(first.uri);
+    expect(first.uri).toContain("/rest/getCoverArt?");
+    expect(first.uri).toContain("t=");
+    expect(first.uri).not.toContain(credentials.password);
+    expect(api.streamUrl("one")).toBe(api.streamUrl("one"));
+  });
   it("automatically retries the alternate address after a network failure", async () => {
     const api = new Api({
       ...credentials,

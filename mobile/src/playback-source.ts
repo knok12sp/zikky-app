@@ -6,7 +6,7 @@ export function playbackSource(
   entry: Entry,
   api: Api,
   local: string | undefined,
-  artworkUrl: string,
+  artworkUrl?: string,
 ) {
   const song = entry.song;
   return {

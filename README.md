@@ -276,11 +276,31 @@ white or fail to play audio.
 
 Credentials use the OS Secret Service keyring when available. Otherwise the app
 keeps them in memory for the session only and never writes them to
-`localStorage`. Desktop streaming uses salted Subsonic token URLs. The Tauri
+`localStorage`. Desktop streaming uses salted Subsonic token URLs. The salt and
+token stay stable for the session so artwork URLs remain cacheable. The Tauri
 HTTP plugin carries library requests, so no server CORS change is required.
 
 If the window is blank on an NVIDIA system, launch with
 `WEBKIT_DISABLE_DMABUF_RENDERER=1 zikky`.
+
+### Windows desktop
+
+The public client also builds as a Windows desktop app from the same Expo Web
+bundle. Use Windows 10 or 11 with WebView2, the Rust MSVC toolchain, Visual
+Studio Build Tools (Desktop development with C++), and Node.js 24:
+
+```powershell
+cd mobile
+npm ci
+npx expo export --platform web --output-dir dist-web
+npx tauri build
+```
+
+The installers are written to `mobile/src-tauri/target/release/bundle/nsis/`
+(`.exe`) and `bundle/msi/` (`.msi`). Windows packaging is configured by
+`mobile/src-tauri/tauri.windows.conf.json`; it has not been validated on a
+Windows machine. Cross-compiling the Windows installers from Linux is not
+supported, and a Linux AppImage is not a Windows build.
 
 ## Connecting your phone
 

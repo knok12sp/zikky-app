@@ -205,22 +205,30 @@ it("adding and removing an upcoming track preserves the playing stream", async (
   expect(engine.clear).toHaveBeenCalledTimes(clears);
   expect(state.sources).toHaveLength(1);
 });
-it("pause cancels a pending play request and prevents late autoplay", async () => {
+it("starts playback without a server preflight request", async () => {
   await mount();
-  let finish!: (value: unknown) => void;
-  state.session.api.rest.mockImplementation(
+  await act(async () => {
+    await player.select([song], 0);
+  });
+  expect(state.session.api.rest).not.toHaveBeenCalled();
+  expect(engine.play).toHaveBeenCalled();
+});
+it("pause cancels a pending play request and prevents late autoplay", async () => {
+  let finish!: () => void;
+  vi.mocked(setAudioModeAsync).mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         finish = resolve;
       }),
   );
+  await mount();
   let pending!: Promise<void>;
   await act(async () => {
     pending = player.select([song], 0);
   });
   await act(async () => player.pause());
   await act(async () => {
-    finish({});
+    finish();
     await pending;
   });
   expect(engine.play).not.toHaveBeenCalled();

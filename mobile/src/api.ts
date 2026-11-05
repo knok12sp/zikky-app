@@ -158,11 +158,17 @@ const SORT_TYPES: Record<string, string> = {
 };
 export class Api {
   private activeServerValue: string;
+  // One salt per session keeps web image/stream URLs stable, so WebKit can cache
+  // artwork instead of re-downloading every render.
+  private readonly salt: string;
+  private readonly token: string;
   constructor(readonly credentials: Credentials) {
     const servers = this.addresses;
     this.activeServerValue = servers.includes(credentials.preferredServer ?? "")
       ? credentials.preferredServer!
       : credentials.server;
+    this.salt = subsonicSalt();
+    this.token = md5(credentials.password + this.salt);
   }
   get addresses() {
     return [
@@ -192,11 +198,10 @@ export class Api {
   }
   /** Salted Subsonic auth for URLs that cannot carry an Authorization header. */
   signedQuery() {
-    const salt = subsonicSalt();
     return new URLSearchParams({
       u: this.credentials.username,
-      t: md5(this.credentials.password + salt),
-      s: salt,
+      t: this.token,
+      s: this.salt,
       v: "1.16.1",
       c: "Zikky",
       f: "json",
@@ -468,11 +473,7 @@ export class Api {
   playingMedia(id: string) {
     return this.media(id);
   }
-  artwork(
-    id: string,
-    server = this.activeServerValue,
-    size = 480,
-  ) {
+  artwork(id: string, server = this.activeServerValue, size = 480) {
     const query = this.signedQuery();
     query.set("id", id);
     query.set("size", String(Math.max(16, Math.min(2048, Math.round(size)))));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Image,
@@ -46,19 +46,29 @@ export function Art({
   const key = `${session?.scope}:${song.id}:${song.coverArt}:${session?.api.activeServer}:${!!local}:${artworkSize}`;
   const [failed, setFailed] = useState({ key, index: 0 });
   const index = failed.key === key ? failed.index : 0;
-  const candidates = [
-    ...(local ? [{ uri: session!.offline.artwork(song.id) }] : []),
-    ...(session
-      ? addressOrder(session.api.addresses, session.api.activeServer).map(
-          (address) =>
-            session.api.artwork(
-              song.coverArt ?? song.id,
-              address,
-              artworkSize,
-            ),
-        )
-      : []),
-  ];
+  const candidates = useMemo(
+    () => [
+      ...(local ? [{ uri: session!.offline.artwork(song.id) }] : []),
+      ...(session
+        ? addressOrder(session.api.addresses, session.api.activeServer).map(
+            (address) =>
+              session.api.artwork(
+                song.coverArt ?? song.id,
+                address,
+                artworkSize,
+              ),
+          )
+        : []),
+    ],
+    [
+      session,
+      session?.api.activeServer,
+      song.id,
+      song.coverArt,
+      local,
+      artworkSize,
+    ],
+  );
   return (
     <View
       style={{
