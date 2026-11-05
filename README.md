@@ -30,6 +30,8 @@ that feels good to use every day.
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Build the mobile app](#build-the-mobile-app)
+- [Desktop app for Linux](#desktop-app-for-linux)
+- [Server library management](#server-library-management)
 - [Connecting your phone](#connecting-your-phone)
 - [Configuration](#configuration)
 - [Plain HTTP and local networks](#plain-http-and-local-networks)
@@ -90,6 +92,23 @@ their respective owners.
 - Shuffle, repeat off/all/one, seek, previous/next and continuous playback.
 - Sleep timer, including "finish current song, then sleep".
 - Lock-screen and headset controls through the native audio session.
+- A full-bleed Now Playing screen with 1200 px artwork, sleep timer and contextual actions.
+- A Linux desktop app with the same library, queue and full-screen player.
+
+### Server library management
+
+This repository is the client only. It never deletes, moves or rewrites the
+music on your server. Playback, playlists, favourites and play counts use
+standard Subsonic operations.
+
+If you want permanent server-library deletion, album/track cleanup and Server
+activity, use the full Zikky installation and its desktop app or `/manage`
+page. Pointing this player at a Zikky server gives you playback, playlists and
+favourites; it deliberately does not expose library deletion.
+
+Phone downloads are independent: removing a phone copy never touches the
+server, and deleting music elsewhere never removes an existing offline copy
+from this device.
 
 ### Downloads
 
@@ -223,6 +242,46 @@ requires your own Apple signing identity through Xcode, a development profile,
 or a sideloading tool that re-signs it. There is no free standalone iOS install
 path, and this repository does not ship a signed IPA.
 
+## Desktop app for Linux
+
+The desktop app is built from the same Expo/React Native Web interface and
+packaged with Tauri. It is streaming-only: there is no offline Downloads screen
+on the computer.
+
+Requirements on Arch/CachyOS:
+
+```bash
+sudo pacman -S --needed base-devel rust webkit2gtk-4.1 gtk3 libsoup3 \
+  gstreamer gst-plugins-base gst-plugins-good gst-libav nodejs npm
+```
+
+Build the AppImage:
+
+```bash
+./scripts/desktop-build.sh
+```
+
+This stages `packaging/arch/Zikky-0.6.0-x86_64.AppImage`. Run it directly or
+install the Arch package:
+
+```bash
+cd packaging/arch
+makepkg -si
+```
+
+The package installs to `/opt/zikky` and adds a `zikky` launcher. The build is
+unsigned and targets the machine that built it. WebKitGTK and GStreamer come
+from the host; without `gst-plugins-good` and `gst-libav`, the window can stay
+white or fail to play audio.
+
+Credentials use the OS Secret Service keyring when available. Otherwise the app
+keeps them in memory for the session only and never writes them to
+`localStorage`. Desktop streaming uses salted Subsonic token URLs. The Tauri
+HTTP plugin carries library requests, so no server CORS change is required.
+
+If the window is blank on an NVIDIA system, launch with
+`WEBKIT_DISABLE_DMABUF_RENDERER=1 zikky`.
+
 ## Connecting your phone
 
 1. Put the phone on the same network as the server, or connect your VPN.
@@ -345,6 +404,21 @@ the cache and refresh in the background.
 - Check whether the track needs transcoding and whether the server has an
   appropriate transcoder configured.
 - Try another server address if you configured a fallback route.
+
+### Server library management
+
+This repository is the client only. It never deletes, moves or rewrites the
+music on your server. Playback, playlists, favourites and play counts use
+standard Subsonic operations.
+
+If you want permanent server-library deletion, album/track cleanup and Server
+activity, use the full Zikky installation and its desktop app or `/manage`
+page. Pointing this player at a Zikky server gives you playback, playlists and
+favourites; it deliberately does not expose library deletion.
+
+Phone downloads are independent: removing a phone copy never touches the
+server, and deleting music elsewhere never removes an existing offline copy
+from this device.
 
 ### Downloads do not start
 

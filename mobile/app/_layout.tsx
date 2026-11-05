@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Stack, usePathname } from "expo-router";
-import { View, Text } from "react-native";
+import { Platform, View, Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SessionProvider, useSession } from "../src/session";
 import { PlaybackProvider } from "../src/playback";
@@ -17,6 +17,8 @@ import { MiniPlayer } from "../src/components";
 import { normalizeServers } from "../src/api";
 import { Card, Banner } from "../src/kit";
 import { type } from "../src/theme";
+import { DesktopApp } from "../src/desktop/DesktopApp";
+import { DesktopSignIn } from "../src/desktop/DesktopSignIn";
 function Gate() {
   const { session, loading, restoreError, login } = useSession();
   const { colors } = useTheme();
@@ -26,12 +28,14 @@ function Gate() {
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  if (loading && Platform.OS === "web") return <DesktopSignIn />;
   if (loading)
     return (
       <Page title="Zikky">
         <Busy label="Connecting to your library" />
       </Page>
     );
+  if (!session && Platform.OS === "web") return <DesktopSignIn />;
   if (!session)
     return (
       <Page
@@ -138,27 +142,54 @@ function Gate() {
     );
   return (
     <PlaybackProvider key={session.scope}>
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
-          }}
-        />
-        {!["/", "/library", "/search", "/player", "/queue"].includes(
-          pathname,
-        ) && <MiniPlayer />}
-      </View>
+      {Platform.OS === "web" ? (
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
+          <View style={{ display: "none" }} aria-hidden>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.bg },
+              }}
+            />
+          </View>
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: colors.bg,
+            }}
+          >
+            <DesktopApp />
+          </View>
+        </View>
+      ) : (
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.bg },
+            }}
+          />
+          {!["/", "/library", "/search", "/player", "/queue"].includes(
+            pathname,
+          ) && <MiniPlayer />}
+        </View>
+      )}
     </PlaybackProvider>
   );
 }
 export default function Layout() {
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{ flex: 1, width: "100%" }}>
       <ThemeProvider>
-        <SessionProvider>
-          <Gate />
-        </SessionProvider>
+        <View style={{ flex: 1, width: "100%" }}>
+          <SessionProvider>
+            <Gate />
+          </SessionProvider>
+        </View>
       </ThemeProvider>
     </SafeAreaProvider>
   );

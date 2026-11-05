@@ -25,11 +25,14 @@ export type IconName =
   | "settings"
   | "server"
   | "phone"
+  | "artist"
   | "plus"
   | "check"
   | "note"
   | "sort"
   | "clock"
+  | "volume"
+  | "volumeOff"
   | "trash"
   | "sparkle"
   | "wifi"
@@ -467,6 +470,92 @@ export function Icon({
               height: width,
               borderRadius: width,
               backgroundColor: color,
+            }}
+          />
+        </View>,
+      );
+    case "volume":
+    case "volumeOff":
+      return wrap(
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: size * 0.05,
+          }}
+        >
+          <View
+            style={{
+              width: size * 0.22,
+              height: size * 0.26,
+              backgroundColor: color,
+            }}
+          />
+          <View
+            style={{
+              width: 0,
+              height: 0,
+              borderTopWidth: size * 0.22,
+              borderBottomWidth: size * 0.22,
+              borderRightWidth: size * 0.28,
+              borderTopColor: "transparent",
+              borderBottomColor: "transparent",
+              borderRightColor: color,
+            }}
+          />
+          {name === "volume" ? (
+            <View style={{ marginLeft: size * 0.04, gap: size * 0.04 }}>
+              {[0.3, 0.46].map((s, i) => (
+                <View
+                  key={i}
+                  style={{
+                    width: size * s,
+                    height: size * s,
+                    borderRadius: size,
+                    borderWidth: width,
+                    borderColor: color,
+                    borderLeftColor: "transparent",
+                    borderTopColor: "transparent",
+                    borderBottomColor: "transparent",
+                    transform: [{ rotate: "45deg" }],
+                  }}
+                />
+              ))}
+            </View>
+          ) : (
+            <View
+              style={{
+                width: size * 0.32,
+                height: width,
+                backgroundColor: color,
+                transform: [{ rotate: "-45deg" }],
+                marginLeft: size * 0.04,
+              }}
+            />
+          )}
+        </View>,
+      );
+    case "artist":
+      return wrap(
+        <View style={{ alignItems: "center", gap: size * 0.06 }}>
+          <View
+            style={{
+              width: size * 0.28,
+              height: size * 0.28,
+              borderRadius: size,
+              borderWidth: width,
+              borderColor: color,
+            }}
+          />
+          <View
+            style={{
+              width: size * 0.56,
+              height: size * 0.26,
+              borderTopLeftRadius: size * 0.28,
+              borderTopRightRadius: size * 0.28,
+              borderWidth: width,
+              borderBottomWidth: 0,
+              borderColor: color,
             }}
           />
         </View>,

@@ -1,0 +1,37 @@
+# Maintainer: Zikky
+pkgname=zikky
+pkgver=0.6.0
+pkgrel=1
+pkgdesc="Stream a self-hosted Zikky or Subsonic music library"
+arch=('x86_64')
+url="https://github.com/knok12sp/zikky-app"
+license=('MIT')
+depends=('glibc' 'gtk3' 'webkit2gtk-4.1' 'libsoup3' 'gstreamer' 'gst-plugins-base' 'gst-plugins-good' 'gst-libav')
+source=("Zikky-${pkgver}-x86_64.AppImage")
+sha256sums=('SKIP')
+
+prepare() {
+  ./"Zikky-${pkgver}-x86_64.AppImage" --appimage-extract >/dev/null
+}
+
+package() {
+  install -d "$pkgdir/opt/zikky" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps"
+  cp -a squashfs-root/. "$pkgdir/opt/zikky/"
+  ln -s /opt/zikky/AppRun "$pkgdir/usr/bin/zikky"
+  install -m644 "$srcdir/squashfs-root/zikky.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/zikky.png" 2>/dev/null || \
+    install -m644 "$srcdir/squashfs-root/.DirIcon" \
+      "$pkgdir/usr/share/icons/hicolor/512x512/apps/zikky.png"
+  cat > "$pkgdir/usr/share/applications/zikky.desktop" <<DESKTOP
+[Desktop Entry]
+Name=Zikky
+Comment=Stream your own music library
+Exec=zikky
+Icon=zikky
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=zikky
+DESKTOP
+}

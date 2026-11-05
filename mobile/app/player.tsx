@@ -1,156 +1,355 @@
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { router } from "expo-router";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
+import { LinearGradient } from "expo-linear-gradient";
 import { usePlayback } from "../src/playback";
 import { Art } from "../src/components";
-import { Label, useTheme, report } from "../src/ui";
+import { useTheme, report } from "../src/ui";
 import { useSession, queryClient } from "../src/session";
-import { Icon } from "../src/icon";
+import { watchDownloads } from "../src/offline";
+import { Icon, IconName } from "../src/icon";
 import {
   IconButton,
   PlayButton,
   Chip,
-  Card,
   SectionTitle,
   EmptyState,
 } from "../src/kit";
-import { radius, spacing, type } from "../src/theme";
+import { light, radius, spacing, type } from "../src/theme";
 
 const clock = (s: number) =>
   `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
+
+function MenuRow({
+  title,
+  subtitle,
+  icon,
+  onPress,
+  disabled,
+  danger,
+}: {
+  title: string;
+  subtitle?: string;
+  icon: IconName;
+  onPress: () => unknown;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={() => {
+        try {
+          void Promise.resolve(onPress()).catch(report);
+        } catch (e) {
+          report(e);
+        }
+      }}
+      style={({ pressed }) => ({
+        minHeight: 54,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.md,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.xs,
+        opacity: disabled ? 0.4 : pressed ? 0.55 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 12,
+          backgroundColor: colors.surfaceInset,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Icon
+          name={icon}
+          size={17}
+          color={danger ? colors.danger : colors.muted}
+        />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={[
+            type.body,
+            { color: danger ? colors.danger : colors.text, fontWeight: "600" },
+          ]}
+        >
+          {title}
+        </Text>
+        {!!subtitle && (
+          <Text style={[type.meta, { color: colors.faint }]}>{subtitle}</Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
 
 export default function Player() {
   const p = usePlayback();
   const { colors } = useTheme();
   const { session } = useSession();
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const [menu, setMenu] = useState(false);
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
+  const [, tick] = useState(0);
+  useEffect(() => watchDownloads(() => tick((x) => x + 1)), []);
+
   const song = p.queue.entries[p.queue.index]?.song;
   const upcoming = p.queue.entries.slice(p.queue.index + 1, p.queue.index + 3);
+  const download = song
+    ? session?.offline.list().find((item) => item.id === song.id)
+    : undefined;
   const onPhone = song ? !!session?.offline.local(song.id) : false;
+  const saving = !!download && !onPhone && download.state !== "failed";
+  const downloadFailed = download?.state === "failed";
+  const starred = song
+    ? (favorites[song.id] ?? !!song.starred)
+    : false;
+  const isLight = colors.bg === light.bg;
+  const compact = height < 730;
+  const duration = Math.max(
+    0,
+    p.status.duration || song?.duration || 0,
+  );
+  const current = Math.min(Math.max(0, p.status.currentTime), duration);
+
   async function favorite() {
     if (!song) return;
+    const next = !starred;
     try {
-      await session!.api.rest(song.starred ? "unstar" : "star", {
-        id: song.id,
-      });
+      await session!.api.rest(next ? "star" : "unstar", { id: song.id });
+      setFavorites((value) => ({ ...value, [song.id]: next }));
       await queryClient.invalidateQueries({ queryKey: [session!.scope] });
     } catch (e) {
       report(e);
     }
   }
+
+  function saveToPhone() {
+    if (!song || onPhone) return;
+    session!.offline.enqueue([song]);
+    setMenu(false);
+  }
+
   return (
-    <SafeAreaView
-      edges={["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: colors.bg }}
-    >
-      <View
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {song && (
+        <View style={{ ...StyleSheetAbsolute, overflow: "hidden" }}>
+          <Art song={song} fill artworkSize={1200} />
+        </View>
+      )}
+      <LinearGradient
+        pointerEvents="none"
+        colors={
+          isLight
+            ? ["rgba(242,245,238,0.62)", "rgba(242,245,238,0)"]
+            : ["rgba(10,14,11,0.72)", "rgba(10,14,11,0)"]
+        }
         style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: spacing.md,
-          paddingTop: spacing.xs,
-          paddingBottom: spacing.xs,
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 190,
         }}
+      />
+      <LinearGradient
+        pointerEvents="none"
+        colors={
+          isLight
+            ? [
+                "rgba(242,245,238,0)",
+                "rgba(242,245,238,0.42)",
+                "rgba(242,245,238,0.86)",
+                "rgba(242,245,238,0.99)",
+                "#F2F5EE",
+              ]
+            : [
+                "rgba(10,14,11,0)",
+                "rgba(10,14,11,0.34)",
+                "rgba(10,14,11,0.78)",
+                "rgba(10,14,11,0.97)",
+                "#0A0E0B",
+              ]
+        }
+        locations={[0, 0.3, 0.58, 0.8, 1]}
+        style={StyleSheetAbsolute}
+      />
+
+      <SafeAreaView
+        edges={["top", "bottom", "left", "right"]}
+        style={{ flex: 1 }}
       >
-        <IconButton
-          name="chevronDown"
-          label="Back"
-          onPress={() => router.back()}
-          size={44}
-          iconSize={24}
-        />
-        <Text
-          style={[
-            type.micro,
-            {
-              color: colors.faint,
-              textTransform: "uppercase",
-              letterSpacing: 2,
-            },
-          ]}
+        <View
+          style={{
+            width: "100%",
+            maxWidth: 760,
+            alignSelf: "center",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: spacing.md,
+            paddingTop: spacing.xs,
+          }}
         >
-          Now playing
-        </Text>
-        <IconButton
-          name="queue"
-          label="Open queue"
-          onPress={() => router.push("/queue")}
-          size={44}
-          iconSize={20}
-        />
-      </View>
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: spacing.xl,
-          paddingBottom: Math.max(insets.bottom, 20) + 16,
-          gap: spacing.lg,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        {!!(p.busy || p.error) && (
-          <View
-            style={{
-              backgroundColor: p.error ? colors.dangerSoft : colors.accentSoft,
-              borderRadius: radius.md,
-              padding: spacing.sm,
-            }}
+          <IconButton
+            name="chevronDown"
+            label="Close player"
+            onPress={() => router.back()}
+            size={44}
+            iconSize={24}
+          />
+          <Text
+            style={[
+              type.micro,
+              {
+                color: isLight ? colors.muted : "rgba(237,242,233,0.72)",
+                textTransform: "uppercase",
+                letterSpacing: 2.2,
+              },
+            ]}
           >
-            <Text
-              style={[
-                type.meta,
-                {
-                  color: p.error ? colors.danger : colors.accent,
-                  textAlign: "center",
-                },
-              ]}
-            >
-              {p.busy || p.error}
-            </Text>
-          </View>
-        )}
+            Now playing
+          </Text>
+          <IconButton
+            name="more"
+            label="More player options"
+            onPress={() => setMenu(true)}
+            disabled={!song}
+            size={44}
+            iconSize={22}
+            color={isLight ? colors.text : "#EDF2E9"}
+          />
+        </View>
 
         {song ? (
-          <>
-            <View style={{ alignItems: "center", paddingTop: spacing.sm }}>
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: "flex-end",
+              paddingHorizontal: spacing.xxl,
+              paddingBottom: Math.max(insets.bottom, spacing.lg),
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            <View
+              style={{
+                width: "100%",
+                maxWidth: 600,
+                alignSelf: "center",
+                gap: compact ? 13 : 18,
+                paddingTop: compact ? 20 : 44,
+              }}
+            >
+              {!!(p.busy || p.error) && (
+                <View
+                  style={{
+                    backgroundColor: p.error
+                      ? colors.dangerSoft
+                      : colors.accentSoft,
+                    borderRadius: radius.md,
+                    padding: spacing.sm,
+                  }}
+                >
+                  <Text
+                    style={[
+                      type.meta,
+                      {
+                        color: p.error ? colors.danger : colors.accent,
+                        textAlign: "center",
+                      },
+                    ]}
+                  >
+                    {p.busy || p.error}
+                  </Text>
+                </View>
+              )}
+
               <View
                 style={{
-                  padding: 8,
-                  borderRadius: 24,
-                  backgroundColor: colors.surfaceRaised,
-                  borderWidth: 1,
-                  borderColor: colors.border,
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  gap: spacing.md,
                 }}
               >
-                <Art song={song} size={260} radius={16} />
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text
+                    numberOfLines={2}
+                    style={[
+                      type.title,
+                      {
+                        color: colors.text,
+                        fontSize: compact ? 25 : 30,
+                        lineHeight: compact ? 30 : 35,
+                        letterSpacing: -0.8,
+                      },
+                    ]}
+                  >
+                    {song.title}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      type.body,
+                      {
+                        color: colors.text,
+                        fontWeight: "600",
+                        fontSize: compact ? 15 : 16,
+                      },
+                    ]}
+                  >
+                    {song.artist}
+                  </Text>
+                  {!!song.album && (
+                    <Text
+                      numberOfLines={1}
+                      style={[type.meta, { color: colors.muted }]}
+                    >
+                      {song.album}
+                    </Text>
+                  )}
+                </View>
+                <IconButton
+                  name={starred ? "heartFilled" : "heart"}
+                  label={starred ? "Remove favorite" : "Add favorite"}
+                  active={starred}
+                  onPress={favorite}
+                  size={46}
+                  iconSize={22}
+                  variant={starred ? "plain" : "outline"}
+                />
               </View>
-            </View>
 
-            <View style={{ gap: 4 }}>
-              <Text
-                numberOfLines={2}
-                style={[type.title, { color: colors.text }]}
-              >
-                {song.title}
-              </Text>
-              <Text style={[type.meta, { color: colors.muted, fontSize: 15 }]}>
-                {song.artist}
-                {song.album ? ` — ${song.album}` : ""}
-              </Text>
               <View
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 6,
-                  paddingTop: 2,
+                  gap: 7,
                 }}
               >
                 <Icon
-                  name={onPhone ? "downloaded" : "server"}
+                  name={onPhone ? "downloaded" : saving ? "download" : "server"}
                   size={12}
                   color={onPhone ? colors.accent : colors.faint}
                 />
@@ -165,301 +364,250 @@ export default function Player() {
                 >
                   {onPhone
                     ? "Offline on this phone"
-                    : "Streaming from your server"}
-                </Text>
-                {song.starred && (
-                  <>
-                    <Text style={[type.micro, { color: colors.faint }]}>·</Text>
-                    <Icon name="heartFilled" size={11} color={colors.accent} />
-                  </>
-                )}
-              </View>
-            </View>
-
-            <View
-              style={{
-                backgroundColor: colors.surfaceInset,
-                borderRadius: radius.md,
-                borderWidth: 1,
-                borderColor: colors.border,
-                paddingHorizontal: spacing.md,
-                paddingTop: spacing.sm,
-                paddingBottom: spacing.xs,
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "flex-end",
-                }}
-              >
-                <View style={{ gap: 1 }}>
-                  <Text
-                    style={[
-                      type.numeric,
-                      { color: colors.display, fontSize: 26, lineHeight: 30 },
-                    ]}
-                  >
-                    {clock(p.status.currentTime)}
-                  </Text>
-                  <Text style={[type.micro, { color: colors.faint }]}>
-                    ELAPSED
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 1 }}>
-                  <Text
-                    style={[
-                      type.numeric,
-                      { color: colors.muted, fontSize: 26, lineHeight: 30 },
-                    ]}
-                  >
-                    −{clock(p.status.duration - p.status.currentTime)}
-                  </Text>
-                  <Text style={[type.micro, { color: colors.faint }]}>
-                    REMAINING
-                  </Text>
-                </View>
-              </View>
-              <Slider
-                accessibilityLabel="Playback position"
-                minimumValue={0}
-                maximumValue={Math.max(1, p.status.duration)}
-                value={p.status.currentTime}
-                minimumTrackTintColor={colors.accent}
-                maximumTrackTintColor={colors.border}
-                thumbTintColor={colors.accent}
-                disabled={!p.status.isLoaded || p.status.duration <= 0}
-                onSlidingComplete={(value) => void p.seek(value)}
-                style={{ width: "100%", height: 38 }}
-              />
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  paddingBottom: 4,
-                }}
-              >
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <View
-                    key={i}
-                    style={{
-                      width: 1,
-                      height: 3,
-                      backgroundColor: colors.borderStrong,
-                    }}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingHorizontal: spacing.xs,
-              }}
-            >
-              <IconButton
-                name="shuffle"
-                label={p.queue.shuffle ? "Shuffle on" : "Shuffle off"}
-                active={p.queue.shuffle}
-                onPress={() => p.shuffle()}
-                size={44}
-                iconSize={21}
-              />
-              <IconButton
-                name="previous"
-                label="Previous"
-                onPress={p.previous}
-                size={50}
-                iconSize={22}
-                variant="outline"
-              />
-              <PlayButton
-                playing={p.status.playing}
-                busy={!!p.busy}
-                onPress={p.toggle}
-                size={70}
-              />
-              <IconButton
-                name="next"
-                label="Next"
-                onPress={p.next}
-                size={50}
-                iconSize={22}
-                variant="outline"
-              />
-              <IconButton
-                name={p.queue.repeat === "single" ? "repeatOne" : "repeat"}
-                label={
-                  "Repeat " +
-                  { none: "off", all: "all", single: "one" }[p.queue.repeat]
-                }
-                active={p.queue.repeat !== "none"}
-                onPress={p.repeat}
-                size={44}
-                iconSize={21}
-              />
-            </View>
-
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-around",
-                paddingTop: spacing.xs,
-              }}
-            >
-              <View style={{ alignItems: "center", gap: 4 }}>
-                <IconButton
-                  name={song.starred ? "heartFilled" : "heart"}
-                  label={song.starred ? "Remove favorite" : "Add favorite"}
-                  active={!!song.starred}
-                  onPress={favorite}
-                  size={44}
-                />
-                <Text style={[type.micro, { color: colors.faint }]}>
-                  FAVORITE
+                    : saving
+                      ? "Saving to this phone"
+                      : downloadFailed
+                        ? "Phone download failed"
+                        : "Streaming from your server"}
                 </Text>
               </View>
-              <View style={{ alignItems: "center", gap: 4 }}>
-                <IconButton
-                  name={onPhone ? "downloaded" : "download"}
-                  label={
-                    onPhone
-                      ? "Downloaded to this phone"
-                      : "Download to this phone"
-                  }
-                  disabled={onPhone}
-                  active={onPhone}
-                  onPress={() => {
-                    if (!song) return;
-                    session!.offline.enqueue([song]);
-                    router.push("/downloads");
+
+              <View style={{ gap: 2 }}>
+                <Slider
+                  accessibilityLabel="Playback position"
+                  accessibilityValue={{
+                    min: 0,
+                    max: Math.round(duration),
+                    now: Math.round(current),
                   }}
-                  size={44}
+                  minimumValue={0}
+                  maximumValue={Math.max(1, duration)}
+                  value={current}
+                  minimumTrackTintColor={colors.accent}
+                  maximumTrackTintColor={isLight ? colors.borderStrong : "#465248"}
+                  thumbTintColor={colors.accent}
+                  disabled={!p.status.isLoaded || duration <= 0}
+                  onSlidingComplete={(value) => void p.seek(value)}
+                  style={{ width: "100%", height: 34 }}
                 />
-                <Text style={[type.micro, { color: colors.faint }]}>PHONE</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text style={[type.numeric, { color: colors.text }]}>
+                    {clock(current)}
+                  </Text>
+                  <Text style={[type.numeric, { color: colors.muted }]}>
+                    −{clock(duration - current)}
+                  </Text>
+                </View>
               </View>
-              <View style={{ alignItems: "center", gap: 4 }}>
-                <IconButton
-                  name="queue"
-                  label="Queue"
-                  onPress={() => router.push("/queue")}
-                  size={44}
-                />
-                <Text style={[type.micro, { color: colors.faint }]}>QUEUE</Text>
-              </View>
-              <View style={{ alignItems: "center", gap: 4 }}>
-                <IconButton
-                  name="retry"
-                  label="Retry playback"
-                  onPress={() => void p.retry()}
-                  size={44}
-                />
-                <Text style={[type.micro, { color: colors.faint }]}>RETRY</Text>
-              </View>
-            </View>
 
-            {p.status.isBuffering && (
-              <Text
-                style={[
-                  type.micro,
-                  { color: colors.accent, textAlign: "center" },
-                ]}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingHorizontal: spacing.xs,
+                }}
               >
-                BUFFERING…
-              </Text>
-            )}
+                <IconButton
+                  name="shuffle"
+                  label={p.queue.shuffle ? "Shuffle on" : "Shuffle off"}
+                  active={p.queue.shuffle}
+                  onPress={() => p.shuffle()}
+                  size={46}
+                  iconSize={22}
+                />
+                <IconButton
+                  name="previous"
+                  label="Previous"
+                  onPress={p.previous}
+                  size={52}
+                  iconSize={23}
+                  variant="outline"
+                />
+                <PlayButton
+                  playing={p.status.playing}
+                  busy={!!p.busy}
+                  onPress={p.toggle}
+                  size={compact ? 66 : 76}
+                />
+                <IconButton
+                  name="next"
+                  label="Next"
+                  onPress={p.next}
+                  size={52}
+                  iconSize={23}
+                  variant="outline"
+                />
+                <IconButton
+                  name={p.queue.repeat === "single" ? "repeatOne" : "repeat"}
+                  label={
+                    "Repeat " +
+                    { none: "off", all: "all", single: "one" }[
+                      p.queue.repeat
+                    ]
+                  }
+                  active={p.queue.repeat !== "none"}
+                  onPress={p.repeat}
+                  size={46}
+                  iconSize={22}
+                />
+              </View>
 
-            <View style={{ gap: spacing.sm }}>
-              <SectionTitle
-                title="Up next"
-                action={
-                  p.queue.entries.length > p.queue.index + 1
-                    ? "Open queue"
-                    : undefined
-                }
-                onAction={() => router.push("/queue")}
-              />
-              {upcoming.length ? (
-                upcoming.map((entry) => (
-                  <Pressable
-                    key={entry.key}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Play ${entry.song.title}, ${entry.song.artist}`}
-                    onPress={() =>
-                      p.skip(
-                        p.queue.entries.findIndex((e) => e.key === entry.key),
-                      )
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-around",
+                  paddingTop: 2,
+                }}
+              >
+                <View style={{ alignItems: "center", gap: 4 }}>
+                  <IconButton
+                    name={
+                      onPhone ? "downloaded" : saving ? "download" : "download"
                     }
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: spacing.md,
-                      paddingVertical: 5,
-                    }}
-                  >
-                    <Art song={entry.song} size={38} radius={8} />
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          type.meta,
-                          { color: colors.text, fontWeight: "600" },
-                        ]}
-                      >
-                        {entry.song.title}
-                      </Text>
-                      <Text
-                        numberOfLines={1}
-                        style={[type.micro, { color: colors.muted }]}
-                      >
-                        {entry.song.artist}
-                      </Text>
-                    </View>
-                    <Icon name="queue" size={14} color={colors.faint} />
-                  </Pressable>
-                ))
-              ) : (
-                <Text style={[type.meta, { color: colors.faint }]}>
-                  The queue ends with this track.
+                    label={
+                      onPhone
+                        ? "Downloaded to this phone"
+                        : saving
+                          ? "Saving to this phone"
+                          : "Download to this phone"
+                    }
+                    disabled={onPhone || saving}
+                    active={onPhone || saving}
+                    onPress={saveToPhone}
+                    size={46}
+                  />
+                  <Text style={[type.micro, { color: colors.faint }]}>
+                    {onPhone ? "SAVED" : saving ? "SAVING" : "PHONE"}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "center", gap: 4 }}>
+                  <IconButton
+                    name="clock"
+                    label="Sleep timer"
+                    active={!!p.sleep || p.sleepAfterTrack}
+                    onPress={() => setMenu(true)}
+                    size={46}
+                  />
+                  <Text style={[type.micro, { color: colors.faint }]}>
+                    SLEEP
+                  </Text>
+                </View>
+                <View style={{ alignItems: "center", gap: 4 }}>
+                  <IconButton
+                    name="queue"
+                    label="Open queue"
+                    onPress={() => router.push("/queue")}
+                    size={46}
+                  />
+                  <Text style={[type.micro, { color: colors.faint }]}>
+                    QUEUE
+                  </Text>
+                </View>
+                <View style={{ alignItems: "center", gap: 4 }}>
+                  <IconButton
+                    name="more"
+                    label="More player options"
+                    onPress={() => setMenu(true)}
+                    size={46}
+                  />
+                  <Text style={[type.micro, { color: colors.faint }]}>
+                    MORE
+                  </Text>
+                </View>
+              </View>
+
+              {!!(p.sleep || p.sleepAfterTrack) && (
+                <Text
+                  style={[
+                    type.meta,
+                    { color: colors.muted, textAlign: "center" },
+                  ]}
+                >
+                  {p.sleepAfterTrack
+                    ? "Sleeping after this track"
+                    : `Sleep timer ${new Date(p.sleep!).toLocaleTimeString()}`}
                 </Text>
+              )}
+
+              {p.status.isBuffering && (
+                <Text
+                  style={[
+                    type.micro,
+                    { color: colors.accent, textAlign: "center" },
+                  ]}
+                >
+                  BUFFERING…
+                </Text>
+              )}
+
+              {upcoming.length > 0 && (
+                <View style={{ gap: compact ? 6 : spacing.sm }}>
+                  <SectionTitle
+                    title="Up next"
+                    action="Queue"
+                    onAction={() => router.push("/queue")}
+                  />
+                  {upcoming.slice(0, compact ? 1 : 2).map((entry) => (
+                    <Pressable
+                      key={entry.key}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Play ${entry.song.title}, ${entry.song.artist}`}
+                      onPress={() =>
+                        p.skip(
+                          p.queue.entries.findIndex(
+                            (item) => item.key === entry.key,
+                          ),
+                        )
+                      }
+                      style={({ pressed }) => ({
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: spacing.md,
+                        paddingVertical: 4,
+                        opacity: pressed ? 0.6 : 1,
+                      })}
+                    >
+                      <Art song={entry.song} size={36} radius={8} />
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            type.meta,
+                            { color: colors.text, fontWeight: "600" },
+                          ]}
+                        >
+                          {entry.song.title}
+                        </Text>
+                        <Text
+                          numberOfLines={1}
+                          style={[type.micro, { color: colors.muted }]}
+                        >
+                          {entry.song.artist}
+                        </Text>
+                      </View>
+                      <Icon name="queue" size={14} color={colors.faint} />
+                    </Pressable>
+                  ))}
+                </View>
               )}
             </View>
-
-            <Card inset padding={spacing.md} style={{ gap: spacing.sm }}>
-              <SectionTitle title="Sleep timer" />
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                <Chip
-                  title="Finish current song, then sleep"
-                  active={p.sleepAfterTrack}
-                  onPress={p.sleepAfterCurrent}
-                />
-                {[0, 15, 30, 60].map((m) => (
-                  <Chip
-                    key={m}
-                    title={m ? `Sleep ${m}m` : "Cancel timer"}
-                    onPress={() => p.sleepFor(m)}
-                  />
-                ))}
-              </View>
-              {!!p.sleep && (
-                <Text style={[type.meta, { color: colors.muted }]}>
-                  Sleep timer: {new Date(p.sleep).toLocaleTimeString()}
-                </Text>
-              )}
-              {p.sleepAfterTrack && (
-                <Text style={[type.meta, { color: colors.muted }]}>
-                  Playback stops when the current song finishes, even with
-                  repeat enabled.
-                </Text>
-              )}
-            </Card>
-          </>
+          </ScrollView>
         ) : (
-          <View style={{ paddingTop: 60, gap: spacing.md }}>
+          <View
+            style={{
+              flex: 1,
+              paddingHorizontal: spacing.xxl,
+              paddingBottom: Math.max(insets.bottom, spacing.xl),
+              justifyContent: "center",
+              gap: spacing.lg,
+            }}
+          >
             <EmptyState
               icon="note"
               title="Nothing playing"
@@ -479,7 +627,198 @@ export default function Player() {
             )}
           </View>
         )}
-      </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+
+      <Modal
+        visible={menu}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setMenu(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "flex-end",
+            backgroundColor: "rgba(0,0,0,0.46)",
+          }}
+        >
+          <Pressable
+            accessible={false}
+            onPress={() => setMenu(false)}
+            style={{ flex: 1 }}
+          />
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderTopLeftRadius: 26,
+              borderTopRightRadius: 26,
+              borderWidth: 1,
+              borderColor: colors.border,
+              paddingHorizontal: spacing.xl,
+              paddingTop: spacing.sm,
+              paddingBottom: Math.max(insets.bottom, spacing.xl),
+              maxHeight: "86%",
+            }}
+          >
+            <View
+              style={{
+                alignSelf: "center",
+                width: 38,
+                height: 4,
+                borderRadius: 4,
+                backgroundColor: colors.borderStrong,
+                marginBottom: spacing.md,
+              }}
+            />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {song && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: spacing.md,
+                    paddingBottom: spacing.sm,
+                  }}
+                >
+                  <Art song={song} size={52} artworkSize={480} />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        type.body,
+                        { color: colors.text, fontWeight: "700" },
+                      ]}
+                    >
+                      {song.title}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[type.meta, { color: colors.muted }]}
+                    >
+                      {song.artist}
+                    </Text>
+                  </View>
+                  <IconButton
+                    name="close"
+                    label="Close options"
+                    onPress={() => setMenu(false)}
+                    size={38}
+                  />
+                </View>
+              )}
+
+              <Text
+                style={[
+                  type.micro,
+                  {
+                    color: colors.faint,
+                    textTransform: "uppercase",
+                    marginTop: spacing.md,
+                    marginBottom: spacing.xs,
+                  },
+                ]}
+              >
+                Track
+              </Text>
+              <MenuRow
+                title={
+                  onPhone
+                    ? "Downloaded to this phone"
+                    : saving
+                      ? "Saving to this phone"
+                      : "Download to this phone"
+                }
+                subtitle={
+                  onPhone
+                    ? "Keeps playing without the server"
+                    : "Keeps an offline copy on this device"
+                }
+                icon="download"
+                disabled={!song || onPhone || saving}
+                onPress={saveToPhone}
+              />
+              <MenuRow
+                title="Open queue"
+                subtitle={`${p.queue.entries.length} ${p.queue.entries.length === 1 ? "track" : "tracks"} lined up`}
+                icon="queue"
+                onPress={() => {
+                  setMenu(false);
+                  router.push("/queue");
+                }}
+              />
+              <MenuRow
+                title="Retry playback"
+                subtitle="Reload the current stream and server route"
+                icon="retry"
+                onPress={() => {
+                  setMenu(false);
+                  void p.retry();
+                }}
+              />
+
+              <Text
+                style={[
+                  type.micro,
+                  {
+                    color: colors.faint,
+                    textTransform: "uppercase",
+                    marginTop: spacing.md,
+                    marginBottom: spacing.xs,
+                  },
+                ]}
+              >
+                Sleep timer
+              </Text>
+              <View
+                style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+              >
+                <Chip
+                  title="Finish track"
+                  active={p.sleepAfterTrack}
+                  onPress={p.sleepAfterCurrent}
+                />
+                {[15, 30, 60].map((minutes) => (
+                  <Chip
+                    key={minutes}
+                    title={`${minutes} min`}
+                    active={
+                      !!p.sleep &&
+                      Math.abs(
+                        p.sleep -
+                          Date.now() -
+                          minutes * 60000,
+                      ) < 60000
+                    }
+                    onPress={() => p.sleepFor(minutes)}
+                  />
+                ))}
+                <Chip title="Cancel timer" onPress={() => p.sleepFor(0)} />
+              </View>
+              {!!(p.sleep || p.sleepAfterTrack) && (
+                <Text
+                  style={[
+                    type.meta,
+                    { color: colors.muted, marginTop: spacing.sm },
+                  ]}
+                >
+                  {p.sleepAfterTrack
+                    ? "Playback stops when this track finishes, even with repeat enabled."
+                    : `Playback stops at ${new Date(p.sleep!).toLocaleTimeString()}.`}
+                </Text>
+              )}
+
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
+
+const StyleSheetAbsolute = {
+  position: "absolute" as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+};

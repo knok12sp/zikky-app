@@ -58,6 +58,7 @@ vi.mock("react-native", () => {
           : ListEmptyComponent,
       ),
     StyleSheet: { create: (s: any) => s },
+    useWindowDimensions: () => ({ width: 1280, height: 900 }),
     useColorScheme: () => "dark",
     Platform: { OS: "ios" },
     Alert: { alert: (...args: any[]) => state.alert(...args) },
@@ -85,6 +86,10 @@ vi.mock("@react-native-community/slider", () => ({
   default: (props: any) => React.createElement("slider", props),
 }));
 vi.mock("expo-status-bar", () => ({ StatusBar: () => null }));
+vi.mock("expo-linear-gradient", () => ({
+  LinearGradient: ({ children, ...props }: any) =>
+    React.createElement("linear-gradient", props, children),
+}));
 vi.mock("expo-file-system/legacy", () => ({
   cacheDirectory: "file:///cache/",
   documentDirectory: "file:///documents/",
@@ -482,7 +487,8 @@ it("now playing uses the restored queue index, exposes seeking and sets the slee
     tree!.root.findByType("slider" as any).props.onSlidingComplete(42),
   );
   expect(state.player.seek).toHaveBeenCalledWith(42);
-  await press("Sleep 15m");
+  await press("Sleep timer");
+  await press("15 min");
   expect(state.player.sleepFor).toHaveBeenCalledWith(15);
 });
 it("artwork falls back from a missing phone image to an authenticated server route", async () => {
@@ -709,6 +715,7 @@ it("previous-download recovery skips removed server tracks instead of reimportin
 });
 it("the finish-current-song timer is available from Now playing", async () => {
   await mount(<Player />);
-  await press("Finish current song, then sleep");
+  await press("Sleep timer");
+  await press("Finish track");
   expect(state.player.sleepAfterCurrent).toHaveBeenCalledOnce();
 });

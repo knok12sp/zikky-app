@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import * as SecureStore from "expo-secure-store";
+import { loadConnection, saveConnection, clearConnection } from "./connection-store";
 import * as Crypto from "expo-crypto";
 import { Api, Credentials, normalizeServers } from "./api";
 import { Offline } from "./offline";
@@ -14,7 +14,7 @@ import { AppState } from "react-native";
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
 });
-type Session = { api: Api; scope: string; offline: Offline };
+export type Session = { api: Api; scope: string; offline: Offline };
 const Context = createContext<{
   session: Session | null;
   loading: boolean;
@@ -69,7 +69,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const net = NetInfo.addEventListener((state) =>
       onlineManager.setOnline(state.isConnected !== false),
     );
-    SecureStore.getItemAsync("connection")
+    // A locked or unavailable OS keyring must never block the sign-in screen.
+    const failsafe = setTimeout(() => setLoading(false), 3000);
+    loadConnection()
       .then(async (value) => {
         if (value) setSession(await prepare(JSON.parse(value)));
       })
@@ -78,7 +80,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           "Saved connection could not be restored. Sign in again. Existing phone downloads are retained.",
         ),
       )
-      .finally(() => setLoading(false));
+      .finally(() => {
+        clearTimeout(failsafe);
+        setLoading(false);
+      });
     const sub = AppState.addEventListener("change", (state) =>
       focusManager.setFocused(state === "active"),
     );
@@ -93,7 +98,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const saved = { ...c, preferredServer: api.activeServer };
     const next = await prepare(saved);
     try {
-      await SecureStore.setItemAsync("connection", JSON.stringify(saved));
+      await saveConnection(JSON.stringify(saved));
     } catch (e) {
       await next.offline.stop();
       throw e;
@@ -114,7 +119,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const candidate = new Api(credentials);
     await candidate.rest("ping");
     const saved = { ...credentials, preferredServer: candidate.activeServer };
-    await SecureStore.setItemAsync("connection", JSON.stringify(saved));
+    await saveConnection(JSON.stringify(saved));
     // Keep the same API instance: playback and the download worker share this connection.
     Object.assign(session.api.credentials, saved);
     session.api.preferServer(candidate.activeServer);
@@ -134,7 +139,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   async function logout() {
     await session?.offline.stop();
     await queryClient.cancelQueries();
-    await SecureStore.deleteItemAsync("connection");
+    await clearConnection();
     queryClient.clear();
     setSession(null);
   }

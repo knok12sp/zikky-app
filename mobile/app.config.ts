@@ -13,12 +13,12 @@ const config: ExpoConfig = {
   slug: "zikky",
   scheme: "zikky",
   icon: "./assets/icon.png",
-  version: "0.5.0",
+  version: "0.6.0",
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   ios: {
     bundleIdentifier: "app.zikky.music",
-    buildNumber: "5",
+    buildNumber: "6",
     supportsTablet: true,
     infoPlist: {
       NSLocalNetworkUsageDescription:
@@ -38,7 +38,7 @@ const config: ExpoConfig = {
   },
   android: {
     package: "app.zikky.music",
-    versionCode: 5,
+    versionCode: 6,
     permissions: ["android.permission.INTERNET"],
     blockedPermissions: ["android.permission.RECORD_AUDIO"],
     adaptiveIcon: {

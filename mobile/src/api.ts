@@ -1,3 +1,5 @@
+import { md5, subsonicSalt } from "./md5";
+import { appFetch } from "./http";
 export type Credentials = {
   /** Stable preferred address; kept first so account-scoped downloads survive route changes. */
   server: string;
@@ -188,6 +190,18 @@ export class Api {
       f: "json",
     });
   }
+  /** Salted Subsonic auth for URLs that cannot carry an Authorization header. */
+  signedQuery() {
+    const salt = subsonicSalt();
+    return new URLSearchParams({
+      u: this.credentials.username,
+      t: md5(this.credentials.password + salt),
+      s: salt,
+      v: "1.16.1",
+      c: "Zikky",
+      f: "json",
+    });
+  }
   url(path: string) {
     return this.activeServerValue + path;
   }
@@ -206,7 +220,7 @@ export class Api {
       options.signal?.addEventListener("abort", abort, { once: true });
       const timeout = setTimeout(abort, policy.timeoutMs ?? 7000);
       try {
-        const response = await fetch(server + path, {
+        const response = await appFetch(server + path, {
           ...options,
           headers: { ...this.headers(), ...options.headers },
           signal: controller.signal,
@@ -402,7 +416,7 @@ export class Api {
     });
   }
   media(id: string) {
-    const query = this.authQuery();
+    const query = this.signedQuery();
     query.set("id", id);
     return {
       uri: this.url("/rest/stream?" + query.toString()),
@@ -428,7 +442,7 @@ export class Api {
       // Some servers reject HEAD; a one-byte range request is the fallback.
     }
     if (!Number.isSafeInteger(size) || size <= 128) {
-      const response = await fetch(this.url(path), {
+      const response = await appFetch(this.url(path), {
         headers: { ...this.headers(), Range: "bytes=0-0" },
         signal,
       });
@@ -447,20 +461,32 @@ export class Api {
     return { size, etag };
   }
   private mediaPath(id: string) {
-    const query = this.authQuery();
+    const query = this.signedQuery();
     query.set("id", id);
     return "/rest/stream?" + query.toString();
   }
   playingMedia(id: string) {
     return this.media(id);
   }
-  artwork(id: string, server = this.activeServerValue) {
-    const query = this.authQuery();
+  artwork(
+    id: string,
+    server = this.activeServerValue,
+    size = 480,
+  ) {
+    const query = this.signedQuery();
     query.set("id", id);
-    query.set("size", "600");
+    query.set("size", String(Math.max(16, Math.min(2048, Math.round(size)))));
     return {
       uri: server + "/rest/getCoverArt?" + query.toString(),
       headers: this.headers(),
     };
+  }
+  streamUrl(id: string, server = this.activeServerValue) {
+    const query = this.signedQuery();
+    query.set("id", id);
+    return server + "/rest/stream?" + query.toString();
+  }
+  stream(id: string) {
+    return { uri: this.streamUrl(id) };
   }
 }

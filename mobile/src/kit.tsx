@@ -98,6 +98,7 @@ export function IconButton({
   variant = "plain",
   busy = false,
   rotate,
+  color: tint,
 }: {
   name: IconName;
   label: string;
@@ -109,13 +110,16 @@ export function IconButton({
   variant?: "plain" | "filled" | "outline";
   busy?: boolean;
   rotate?: number;
+  color?: string;
 }) {
   const { colors } = useTheme();
-  const color = active
-    ? colors.accent
-    : variant === "filled"
-      ? colors.onAccent
-      : colors.text;
+  const color =
+    tint ??
+    (active
+      ? colors.accent
+      : variant === "filled"
+        ? colors.onAccent
+        : colors.text);
   return (
     <Pressable
       accessibilityRole="button"

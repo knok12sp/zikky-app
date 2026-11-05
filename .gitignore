@@ -55,3 +55,12 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Desktop build output
+mobile/dist-web/
+**/dist-web/
+**/dist-test/
+mobile/src-tauri/target/
+*.AppImage
+appimage-build/
+mobile/src-tauri/gen/

@@ -360,6 +360,9 @@ function useController() {
     busy,
     sleep,
     sleepAfterTrack,
+    // Desktop-only control; phones use hardware volume.
+    volume: 1,
+    setVolume: (_value: number) => {},
     select,
     enqueue,
     refreshSources: (play = false) => load(ref.current, play),

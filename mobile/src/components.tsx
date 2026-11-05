@@ -30,33 +30,43 @@ export function Art({
   song,
   size = 52,
   radius: corner = 10,
+  artworkSize = 480,
+  fill = false,
 }: {
   song: Song;
   size?: number;
   radius?: number;
+  /** Requested server artwork width. Lists use 480; Now Playing uses 1200. */
+  artworkSize?: number;
+  fill?: boolean;
 }) {
   const { session } = useSession();
   const { colors } = useTheme();
   const local = session?.offline.local(song.id);
-  const key = `${session?.scope}:${song.id}:${song.coverArt}:${session?.api.activeServer}:${!!local}`;
+  const key = `${session?.scope}:${song.id}:${song.coverArt}:${session?.api.activeServer}:${!!local}:${artworkSize}`;
   const [failed, setFailed] = useState({ key, index: 0 });
   const index = failed.key === key ? failed.index : 0;
   const candidates = [
     ...(local ? [{ uri: session!.offline.artwork(song.id) }] : []),
     ...(session
       ? addressOrder(session.api.addresses, session.api.activeServer).map(
-          (address) => session.api.artwork(song.coverArt ?? song.id, address),
+          (address) =>
+            session.api.artwork(
+              song.coverArt ?? song.id,
+              address,
+              artworkSize,
+            ),
         )
       : []),
   ];
   return (
     <View
       style={{
-        width: size,
-        height: size,
-        borderRadius: corner,
+        width: fill ? "100%" : size,
+        height: fill ? "100%" : size,
+        borderRadius: fill ? 0 : corner,
         backgroundColor: colors.surfaceInset,
-        borderWidth: 1,
+        borderWidth: fill ? 0 : 1,
         borderColor: colors.border,
         overflow: "hidden",
         alignItems: "center",
@@ -68,8 +78,13 @@ export function Art({
         <Image
           accessibilityLabel={`Artwork for ${song.album ?? song.title}`}
           source={candidates[index]}
+          resizeMode="cover"
           onError={() => setFailed({ key, index: index + 1 })}
-          style={{ position: "absolute", width: size, height: size }}
+          style={{
+            position: "absolute",
+            width: "100%",
+            height: "100%",
+          }}
         />
       )}
     </View>
@@ -182,7 +197,7 @@ export function SongList({
   refresh,
   extra,
   header,
-  emptyText = "No songs here yet. Search your library.",
+  emptyText = "No songs here yet. Search your library or choose Online.",
 }: {
   songs: Song[];
   onPlay?: (index: number) => void;
@@ -320,7 +335,13 @@ export function SongList({
                     }}
                   >
                     <Icon
-                      name={onPhone ? "phone" : "server"}
+                      name={
+                        onPhone
+                          ? "phone"
+                          : item.onServer === false
+                            ? "wifi"
+                            : "server"
+                      }
                       size={10}
                       color={onPhone ? colors.accent : colors.faint}
                     />
@@ -333,7 +354,12 @@ export function SongList({
                         },
                       ]}
                     >
-                      {onPhone ? "On this phone" : "On server"}
+                      {onPhone
+                        ? "On this phone"
+                        : item.onServer === false
+                          ? "Online"
+                          : "On server"}
+                      {onPhone && item.onServer === false ? "" : ""}
                     </Text>
                     {item.starred && (
                       <Icon
@@ -341,6 +367,16 @@ export function SongList({
                         size={10}
                         color={colors.accent}
                       />
+                    )}
+                    {!!item.onServer && !onPhone && (
+                      <Text
+                        style={[
+                          type.micro,
+                          { color: colors.faint, textTransform: "uppercase" },
+                        ]}
+                      >
+                        · Library
+                      </Text>
                     )}
                   </View>
                 </Pressable>
@@ -483,7 +519,7 @@ export function SongList({
                       setSelected(null);
                     }}
                   />
-                  <SheetHeading>Phone storage</SheetHeading>
+                  <SheetHeading>Storage</SheetHeading>
                   <SheetRow
                     title="Download to this phone"
                     subtitle="Keeps an offline copy on this device"
@@ -503,8 +539,8 @@ export function SongList({
                       paddingHorizontal: 4,
                     }}
                   >
-                    Phone downloads are separate from your server library.
-                    Removing one never deletes the server copy.
+                    Server storage and phone storage are separate. Removing a
+                    phone download never deletes the server copy.
                   </Text>
                   <SheetHeading>Add to playlist</SheetHeading>
                   {playlists.isPending && <Busy label="Loading playlists" />}
@@ -515,7 +551,7 @@ export function SongList({
                       onPress={() => playlists.refetch()}
                     />
                   )}
-                  {playlists.data?.length === 0 && (
+                  {playlists.data?.every((p) => p.id.startsWith("bridge_")) && (
                     <Text
                       style={{
                         ...type.meta,
@@ -527,29 +563,31 @@ export function SongList({
                       Create your first playlist below.
                     </Text>
                   )}
-                  {playlists.data?.map((p: { id: string; name: string }) => (
-                    <SheetRow
-                      key={p.id}
-                      title={p.name}
-                      icon="library"
-                      disabled={working}
-                      onPress={() =>
-                        run(() =>
-                          session!.api
-                            .rest("updatePlaylist", {
-                              playlistId: p.id,
-                              songIdToAdd: selected.id,
-                            })
-                            .then(() => {
-                              setSelected(null);
-                              return queryClient.invalidateQueries({
-                                queryKey: [session!.scope],
-                              });
-                            }),
-                        )
-                      }
-                    />
-                  ))}
+                  {playlists.data
+                    ?.filter((p: { id: string }) => !p.id.startsWith("bridge_"))
+                    .map((p: { id: string; name: string }) => (
+                      <SheetRow
+                        key={p.id}
+                        title={p.name}
+                        icon="library"
+                        disabled={working}
+                        onPress={() =>
+                          run(() =>
+                            session!.api
+                              .rest("updatePlaylist", {
+                                playlistId: p.id,
+                                songIdToAdd: selected.id,
+                              })
+                              .then(() => {
+                                setSelected(null);
+                                return queryClient.invalidateQueries({
+                                  queryKey: [session!.scope],
+                                });
+                              }),
+                          )
+                        }
+                      />
+                    ))}
                   <View style={{ paddingTop: spacing.sm, gap: spacing.sm }}>
                     <Field
                       label="New playlist name"
