@@ -32,6 +32,7 @@ export function Art({
   radius: corner = 10,
   artworkSize = 480,
   fill = false,
+  blurRadius,
 }: {
   song: Song;
   size?: number;
@@ -39,6 +40,8 @@ export function Art({
   /** Requested server artwork width. Lists use 480; Now Playing uses 1200. */
   artworkSize?: number;
   fill?: boolean;
+  /** Softens a full-bleed backdrop without touching sharp covers. */
+  blurRadius?: number;
 }) {
   const { session } = useSession();
   const { colors } = useTheme();
@@ -90,10 +93,12 @@ export function Art({
           source={candidates[index]}
           resizeMode="cover"
           onError={() => setFailed({ key, index: index + 1 })}
+          blurRadius={blurRadius}
           style={{
             position: "absolute",
             width: "100%",
             height: "100%",
+            transform: [{ scale: blurRadius ? 1.12 : 1 }],
           }}
         />
       )}
@@ -248,6 +253,17 @@ export function SongList({
     await queryClient.invalidateQueries({ queryKey: [session!.scope] });
     setSelected(null);
   }
+  async function rate(s: Song, value: number) {
+    const rating = s.rating === value ? 0 : value;
+    await session!.api.rest("setRating", {
+      id: s.id,
+      rating: String(rating),
+    });
+    await queryClient.invalidateQueries({ queryKey: [session!.scope] });
+    setSelected((current) =>
+      current?.id === s.id ? { ...current, rating } : current,
+    );
+  }
   return (
     <>
       <FlatList
@@ -377,6 +393,18 @@ export function SongList({
                         size={10}
                         color={colors.accent}
                       />
+                    )}
+                    {!!item.rating && (
+                      <>
+                        <Icon
+                          name="starFilled"
+                          size={10}
+                          color={colors.accent}
+                        />
+                        <Text style={[type.micro, { color: colors.faint }]}>
+                          {item.rating}
+                        </Text>
+                      </>
                     )}
                     {!!item.onServer && !onPhone && (
                       <Text
@@ -514,6 +542,58 @@ export function SongList({
                     disabled={working}
                     onPress={() => run(() => favorite(selected))}
                   />
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      minHeight: 44,
+                      paddingLeft: 4,
+                    }}
+                  >
+                    <Text style={[type.meta, { color: colors.muted }]}>
+                      Rating
+                    </Text>
+                    <View style={{ flexDirection: "row" }}>
+                      {[1, 2, 3, 4, 5].map((value) => (
+                        <Pressable
+                          key={value}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            selected.rating === value
+                              ? `Clear ${value} star rating`
+                              : `Rate ${value} star${value === 1 ? "" : "s"}`
+                          }
+                          accessibilityState={{
+                            selected: (selected.rating ?? 0) >= value,
+                            disabled: working,
+                          }}
+                          disabled={working}
+                          onPress={() => run(() => rate(selected, value))}
+                          style={{
+                            width: 44,
+                            height: 44,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Icon
+                            name={
+                              (selected.rating ?? 0) >= value
+                                ? "starFilled"
+                                : "star"
+                            }
+                            size={20}
+                            color={
+                              (selected.rating ?? 0) >= value
+                                ? colors.accent
+                                : colors.faint
+                            }
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
                   <SheetRow
                     title={
                       later.some((song) => song.id === selected.id)

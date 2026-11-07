@@ -177,7 +177,7 @@ export default function Library() {
         {offline
           ? "Completed copies on this phone only"
           : mode === "Playlists"
-            ? "Collections you and your server have made"
+            ? "Your playlists and smart collections"
             : "Music saved on your server"}
       </Text>
       {mode === "Playlists" && (

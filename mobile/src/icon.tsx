@@ -11,6 +11,8 @@ export type IconName =
   | "repeatOne"
   | "heart"
   | "heartFilled"
+  | "star"
+  | "starFilled"
   | "download"
   | "downloaded"
   | "more"
@@ -44,6 +46,8 @@ const glyph: Partial<Record<IconName, string>> = {
   repeatOne: "↻",
   heart: "♡",
   heartFilled: "♥",
+  star: "☆",
+  starFilled: "★",
   chevronLeft: "‹",
   chevronRight: "›",
   chevronDown: "⌄",
@@ -689,7 +693,11 @@ export function Icon({
           style={{
             color,
             fontSize:
-              name === "heart" || name === "heartFilled" ? size * 0.9 : size,
+              name === "heart" || name === "heartFilled"
+                ? size * 0.9
+                : name === "star" || name === "starFilled"
+                  ? size * 1.05
+                  : size,
             lineHeight: size * 1.1,
             fontFamily:
               name === "shuffle" || name === "repeat" || name === "repeatOne"

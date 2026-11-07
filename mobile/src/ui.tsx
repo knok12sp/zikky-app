@@ -246,6 +246,13 @@ export function Field({
           borderColor: focused ? colors.accent : colors.border,
           borderRadius: radius.md,
           backgroundColor: colors.surfaceInset,
+          ...(Platform.OS === "web"
+            ? {
+                outlineStyle: "solid" as const,
+                outlineWidth: 0,
+                outlineColor: "transparent",
+              }
+            : {}),
         }}
       />
     </View>

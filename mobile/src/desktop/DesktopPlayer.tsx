@@ -32,10 +32,31 @@ export function DesktopPlayer({
   const { width, height } = useWindowDimensions();
   const [options, setOptions] = useState(false);
   const [favorite, setFavorite] = useState<boolean | null>(null);
+  const [rated, setRated] = useState<{ id: string; value: number } | null>(
+    null,
+  );
   const song = p.queue.entries[p.queue.index]?.song;
   const upcoming = p.queue.entries.slice(p.queue.index + 1, p.queue.index + 4);
   const starred = favorite ?? !!song?.starred;
+  const rating = rated && rated.id === song?.id ? rated.value : (song?.rating ?? 0);
   const wide = width >= 860;
+  const cover = Math.round(Math.min(wide ? 360 : width * 0.62, height * 0.36));
+
+  async function rate(value: number) {
+    if (!song) return;
+    const next = rating === value ? 0 : value;
+    setRated({ id: song.id, value: next });
+    try {
+      await session!.api.rest("setRating", {
+        id: song.id,
+        rating: String(next),
+      });
+      await queryClient.invalidateQueries({ queryKey: [session!.scope] });
+    } catch (e) {
+      setRated({ id: song.id, value: rating });
+      report(e);
+    }
+  }
 
   async function toggleFavorite() {
     if (!song) return;
@@ -73,7 +94,7 @@ export function DesktopPlayer({
         }}
       >
         {song ? (
-          <Art song={song} fill artworkSize={1200} />
+          <Art song={song} fill artworkSize={1200} blurRadius={36} />
         ) : (
           <View style={{ flex: 1, backgroundColor: colors.surfaceInset }} />
         )}
@@ -137,7 +158,29 @@ export function DesktopPlayer({
           </View>
         </View>
 
-        <View style={{ flex: 1 }} />
+        <View
+          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        >
+          {!!song && (
+            <View
+              style={{
+                width: cover,
+                height: cover,
+                borderRadius: 20,
+                overflow: "hidden",
+                borderWidth: 1,
+                borderColor: "rgba(244,248,241,0.16)",
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 34,
+                shadowOffset: { width: 0, height: 18 },
+                elevation: 18,
+              }}
+            >
+              <Art song={song} size={cover} radius={20} artworkSize={1200} />
+            </View>
+          )}
+        </View>
 
         <View
           style={{
@@ -276,6 +319,41 @@ export function DesktopPlayer({
                   color={starred ? accent : soft}
                   disabled={!song}
                 />
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginLeft: 6,
+                  }}
+                >
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <Pressable
+                      key={value}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        rating === value
+                          ? `Clear ${value} star rating`
+                          : `Rate ${value} star${value === 1 ? "" : "s"}`
+                      }
+                      accessibilityState={{ selected: rating >= value }}
+                      disabled={!song}
+                      onPress={() => void rate(value)}
+                      style={({ pressed }) => ({
+                        width: 28,
+                        height: 40,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        opacity: pressed ? 0.55 : !song ? 0.35 : 1,
+                      })}
+                    >
+                      <Icon
+                        name={rating >= value ? "starFilled" : "star"}
+                        size={15}
+                        color={rating >= value ? accent : quiet}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
                 <IconButton
                   name="clock"
                   label="Sleep timer"

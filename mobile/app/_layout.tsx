@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Stack, usePathname } from "expo-router";
 import { Platform, View, Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -182,6 +182,14 @@ function Gate() {
   );
 }
 export default function Layout() {
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    const style = document.createElement("style");
+    style.textContent =
+      '[role="button"]:focus-visible, a:focus-visible { outline: 2px solid #22A060; outline-offset: 2px; }';
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, []);
   return (
     <SafeAreaProvider style={{ flex: 1, width: "100%" }}>
       <ThemeProvider>

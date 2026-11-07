@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { Text, View, useWindowDimensions } from "react-native";
 import { useSession } from "../session";
 import { normalizeServers } from "../api";
 import { Action, Field, Label, useTheme } from "../ui";
@@ -9,6 +9,8 @@ import { Icon } from "../icon";
 
 export function DesktopSignIn() {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const narrow = width < 980;
   const { login, restoreError } = useSession();
   const [servers, setServers] = useState("");
   const [username, setUsername] = useState("");
@@ -38,13 +40,40 @@ export function DesktopSignIn() {
         flex: 1,
         width: "100%",
         backgroundColor: colors.bg,
-        flexDirection: "row",
+        flexDirection: narrow ? "column" : "row",
         alignItems: "center",
         justifyContent: "center",
-        padding: spacing.xxxl,
-        gap: 72,
+        padding: narrow ? spacing.xl : spacing.xxxl,
+        gap: narrow ? spacing.lg : 72,
       }}
     >
+      {narrow && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              backgroundColor: colors.accent,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name="note" size={22} color={colors.onAccent} />
+          </View>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 22,
+              fontWeight: "800",
+              letterSpacing: 4,
+            }}
+          >
+            ZIKKY
+          </Text>
+        </View>
+      )}
+      {!narrow && (
       <View style={{ width: 360, gap: spacing.lg }}>
         <View
           style={{
@@ -82,6 +111,7 @@ export function DesktopSignIn() {
           SERVER LIBRARY · STREAMING · PLAYLISTS
         </Text>
       </View>
+      )}
       <Card style={{ width: 420, padding: spacing.xxl, gap: spacing.lg }}>
         <View style={{ gap: 4 }}>
           <Text style={[type.heading, { color: colors.text }]}>Connect</Text>

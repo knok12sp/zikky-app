@@ -483,6 +483,11 @@ it("now playing uses the restored queue index, exposes seeking and sets the slee
   state.player.status.currentIndex = 0;
   await mount(<Player />);
   expect(content()).toContain("Second");
+  expect(
+    tree!.root
+      .findAllByType("Pressable" as any)
+      .filter((n) => n.props.accessibilityLabel === "More player options"),
+  ).toHaveLength(1);
   await act(async () =>
     tree!.root.findByType("slider" as any).props.onSlidingComplete(42),
   );

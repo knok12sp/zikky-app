@@ -18,6 +18,7 @@ export type Song = {
   duration: number;
   coverArt?: string;
   starred?: string;
+  rating?: number;
   onServer?: boolean;
   audioReady?: boolean;
 };
@@ -85,7 +86,16 @@ export function parseSong(value: unknown): Song {
   for (const key of ["onServer", "audioReady"])
     if (s[key] !== undefined && typeof s[key] !== "boolean")
       throw new Error("Invalid song storage status.");
-  return { ...(s as Song), artist };
+  if (
+    s.userRating !== undefined &&
+    (typeof s.userRating !== "number" || s.userRating < 0 || s.userRating > 5)
+  )
+    throw new Error("Invalid song rating.");
+  return {
+    ...(s as Song),
+    artist,
+    ...(typeof s.userRating === "number" ? { rating: s.userRating } : {}),
+  };
 }
 export function parseSongs(value: unknown): Song[] {
   if (value === undefined) return [];

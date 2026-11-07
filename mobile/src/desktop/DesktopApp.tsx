@@ -51,6 +51,15 @@ const NAV: { key: ViewKey; title: string; icon: IconName }[] = [
   { key: "favorites", title: "Favorites", icon: "heart" },
 ];
 
+const PLAYLIST_ICON: Record<string, IconName> = {
+  bridge_all: "library",
+  bridge_favorites: "heartFilled",
+  bridge_top_rated: "starFilled",
+  bridge_recent: "clock",
+  bridge_played: "play",
+  bridge_discover: "sparkle",
+};
+
 const clock = (s: number) =>
   `${Math.floor(Math.max(0, s) / 60)}:${String(
     Math.floor(Math.max(0, s) % 60),
@@ -189,6 +198,24 @@ function SongRow({
           {song.album ?? ""}
         </Text>
       )}
+      <View
+        style={{
+          width: 52,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: 3,
+        }}
+      >
+        {!!song.rating && (
+          <>
+            <Icon name="starFilled" size={11} color={colors.accent} />
+            <Text style={[type.numeric, { color: colors.muted, fontSize: 10 }]}>
+              {song.rating}
+            </Text>
+          </>
+        )}
+      </View>
       <Text style={[type.numeric, { color: colors.faint, width: 44 }]}>
         {clock(song.duration)}
       </Text>
@@ -216,7 +243,7 @@ function AlbumCard({
   const { colors } = useTheme();
   const [hover, setHover] = useState(false);
   const { width } = useWindowDimensions();
-  const size = width > 1500 ? 176 : width > 1100 ? 158 : 136;
+  const size = width > 1500 ? 196 : width > 1100 ? 180 : 148;
   return (
     <Pressable
       accessibilityRole="button"
@@ -273,6 +300,7 @@ function StandardHeader({
   children?: React.ReactNode;
 }) {
   const { colors } = useTheme();
+  const [searchFocused, setSearchFocused] = useState(false);
   return (
     <View style={{ gap: spacing.lg, paddingBottom: spacing.md }}>
       <View
@@ -284,9 +312,6 @@ function StandardHeader({
         }}
       >
         <View style={{ gap: 4, flex: 1 }}>
-          <Text style={[type.micro, { color: colors.faint }]}>
-            YOUR SERVER LIBRARY
-          </Text>
           <Text style={[type.display, { color: colors.text }]}>{title}</Text>
           {!!subtitle && (
             <Text style={[type.meta, { color: colors.muted }]}>{subtitle}</Text>
@@ -302,7 +327,7 @@ function StandardHeader({
               height: 42,
               borderRadius: radius.pill,
               borderWidth: 1,
-              borderColor: colors.border,
+              borderColor: searchFocused ? colors.accent : colors.border,
               backgroundColor: colors.surface,
               paddingHorizontal: 14,
             }}
@@ -314,10 +339,19 @@ function StandardHeader({
               placeholderTextColor={colors.faint}
               value={query}
               onChangeText={setQuery}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
               style={{
                 flex: 1,
                 color: colors.text,
                 fontSize: 14,
+                ...(Platform.OS === "web"
+                  ? {
+                      outlineStyle: "solid" as const,
+                      outlineWidth: 0,
+                      outlineColor: "transparent",
+                    }
+                  : {}),
               }}
             />
             {!!query && (
@@ -515,7 +549,11 @@ function HomeView({
                   justifyContent: "center",
                 }}
               >
-                <Icon name="queue" size={16} color={colors.accent} />
+                <Icon
+                  name={PLAYLIST_ICON[playlist.id] ?? "queue"}
+                  size={16}
+                  color={colors.accent}
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text
@@ -670,6 +708,9 @@ function DetailView({
       >
         <Text style={[type.micro, { color: colors.faint, width: 34 }]}>#</Text>
         <Text style={[type.micro, { color: colors.faint, flex: 1 }]}>TITLE</Text>
+        <Text style={[type.micro, { color: colors.faint, width: 52 }]}>
+          RATING
+        </Text>
         <Text style={[type.micro, { color: colors.faint, width: 44 }]}>TIME</Text>
         <View style={{ width: 70 }} />
       </View>
@@ -738,6 +779,7 @@ function SettingsView() {
           onChange={setAlternates}
           multiline
           maxLength={2048}
+          placeholder="http://192.168.1.10:8787"
         />
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Action
@@ -821,11 +863,15 @@ export function DesktopApp() {
   const [selection, setSelection] = useState<Selection>(null);
   const [query, setQuery] = useState("");
   const [queueOpen, setQueueOpen] = useState(width >= 1280);
+  useEffect(() => {
+    if (width < 1280) setQueueOpen(false);
+  }, [width]);
   const [playerOpen, setPlayerOpen] = useState(false);
   const songs = useSongs();
   const playlists = usePlaylists();
   const all = songs.data ?? [];
   const compact = width < 1120;
+  const persistentQueue = queueOpen && width >= 1280;
   const albums = useMemo(() => {
     const map = new Map<string, Song[]>();
     for (const song of all)
@@ -900,38 +946,16 @@ export function DesktopApp() {
           <View
             style={{
               flexDirection: "row",
-              alignItems: "center",
+              alignItems: "flex-end",
               justifyContent: "space-between",
+              gap: spacing.xl,
             }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <View
-                style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 12,
-                  backgroundColor: colors.accent,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Icon name="note" size={23} color={colors.onAccent} />
-              </View>
-              <View>
-                <Text
-                  style={{
-                    ...type.title,
-                    color: colors.text,
-                    letterSpacing: 3,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Zikky
-                </Text>
-                <Text style={[type.micro, { color: colors.faint }]}>
-                  {session?.api.credentials.username} · YOUR LIBRARY
-                </Text>
-              </View>
+            <View style={{ gap: 4, flex: 1 }}>
+              <Text style={[type.display, { color: colors.text }]}>Home</Text>
+              <Text style={[type.meta, { color: colors.muted }]}>
+                {session?.api.credentials.username} · your server library
+              </Text>
             </View>
             <Text style={[type.meta, { color: colors.muted }]}>
               {all.length} tracks · {albums.length} albums
@@ -1012,7 +1036,7 @@ export function DesktopApp() {
                       })
                     }
                     style={({ pressed }) => ({
-                      width: 148,
+                      width: 156,
                       alignItems: "center",
                       gap: 9,
                       opacity: pressed ? 0.65 : 1,
@@ -1020,15 +1044,15 @@ export function DesktopApp() {
                   >
                     <View
                       style={{
-                        width: 132,
-                        height: 132,
-                        borderRadius: 66,
+                        width: 140,
+                        height: 140,
+                        borderRadius: 70,
                         overflow: "hidden",
                         borderWidth: 1,
                         borderColor: colors.border,
                       }}
                     >
-                      <Art song={artist.tracks[0]!} size={132} radius={66} />
+                      <Art song={artist.tracks[0]!} size={140} radius={70} />
                     </View>
                     <Text
                       numberOfLines={1}
@@ -1082,7 +1106,11 @@ export function DesktopApp() {
                         justifyContent: "center",
                       }}
                     >
-                      <Icon name="queue" size={20} color={colors.accent} />
+                      <Icon
+                        name={PLAYLIST_ICON[playlist.id] ?? "queue"}
+                        size={20}
+                        color={colors.accent}
+                      />
                     </View>
                     <View>
                       <Text
@@ -1242,6 +1270,22 @@ export function DesktopApp() {
 
       <View style={{ flex: 1, minWidth: 0 }}>{main}</View>
 
+      {queueOpen && !persistentQueue && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close queue"
+          onPress={() => setQueueOpen(false)}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 224,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(3,7,4,0.5)",
+            zIndex: 19,
+          }}
+        />
+      )}
       {queueOpen && (
         <View
           style={{
@@ -1251,6 +1295,20 @@ export function DesktopApp() {
             backgroundColor: colors.surface,
             padding: 16,
             gap: 10,
+            ...(persistentQueue
+              ? {}
+              : {
+                  position: "absolute",
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 20,
+                  shadowColor: "#000",
+                  shadowOpacity: 0.35,
+                  shadowRadius: 24,
+                  shadowOffset: { width: -12, height: 0 },
+                  elevation: 16,
+                }),
           }}
         >
           <View
@@ -1356,7 +1414,7 @@ export function DesktopApp() {
           style={{
             position: "absolute",
             left: 224,
-            right: queueOpen ? 310 : 0,
+            right: persistentQueue ? 310 : 0,
             bottom: 0,
             height: 78,
             borderTopWidth: 1,

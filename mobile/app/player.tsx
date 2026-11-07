@@ -509,17 +509,6 @@ export default function Player() {
                     QUEUE
                   </Text>
                 </View>
-                <View style={{ alignItems: "center", gap: 4 }}>
-                  <IconButton
-                    name="more"
-                    label="More player options"
-                    onPress={() => setMenu(true)}
-                    size={46}
-                  />
-                  <Text style={[type.micro, { color: colors.faint }]}>
-                    MORE
-                  </Text>
-                </View>
               </View>
 
               {!!(p.sleep || p.sleepAfterTrack) && (
