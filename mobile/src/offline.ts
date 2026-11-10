@@ -114,6 +114,18 @@ export class Offline {
       this.scope,
     );
   }
+  setGenre(id: string, genre: string) {
+    const row = this.list().find((item) => item.id === id);
+    const song = row && downloadSong(row);
+    if (!song) return;
+    db.runSync(
+      "UPDATE downloads SET song=? WHERE scope=? AND id=?",
+      JSON.stringify({ ...song, genre }),
+      this.scope,
+      id,
+    );
+    emit();
+  }
   path(id: string) {
     return this.root + encodeURIComponent(id) + ".mp3";
   }

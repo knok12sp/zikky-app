@@ -41,9 +41,19 @@ function useController() {
   const sleepAfter = useRef(false);
   const sleepTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playIntent = useRef(false);
-  const failed = useRef(0);
+  const failed = useRef(new Set<string>());
+  const generation = useRef(0);
+  const sourceServer = useRef(api.activeServer);
+  const listeners = useRef<AbortController | null>(null);
+  const pendingPosition = useRef<number | null>(null);
+  const checkpointAt = useRef(0);
   const lastPlayed = useRef("");
-  const [volume, setVolumeState] = useState(1);
+  const [volume, setVolumeState] = useState(() => {
+    const saved = read<unknown>(scope, "volume", 1);
+    return typeof saved === "number" && Number.isFinite(saved)
+      ? Math.max(0, Math.min(1, saved))
+      : 1;
+  });
   const [status, setStatus] = useState({
     currentIndex: 0,
     playing: false,
@@ -56,6 +66,7 @@ function useController() {
   function commit(q: Queue) {
     ref.current = q;
     setQueue(q);
+    setStatus((current) => ({ ...current, currentIndex: q.index }));
     write(scope, "queue", q);
   }
 
@@ -65,81 +76,57 @@ function useController() {
     const value = new window.Audio();
     value.preload = "auto";
     value.volume = volume;
-    value.addEventListener("timeupdate", () =>
+    const controller = new AbortController();
+    listeners.current = controller;
+    const on = (event: string, callback: () => void) =>
+      value.addEventListener(event, callback, { signal: controller.signal });
+    on("timeupdate", () => {
+      if (!currentEntry() || pendingPosition.current !== null) return;
+      const position = Number.isFinite(value.currentTime)
+        ? value.currentTime
+        : 0;
+      ref.current = { ...ref.current, position };
+      if (Date.now() - checkpointAt.current >= 5000) checkpoint();
+      setStatus((current) => ({
+        ...current,
+        currentTime: position,
+        duration: Number.isFinite(value.duration)
+          ? value.duration
+          : current.duration,
+      }));
+    });
+    on("loadedmetadata", () => {
+      if (pendingPosition.current !== null) {
+        value.currentTime = Math.min(
+          pendingPosition.current,
+          Number.isFinite(value.duration) ? value.duration : Infinity,
+        );
+        pendingPosition.current = null;
+      }
       setStatus((current) => ({
         ...current,
         currentTime: value.currentTime,
-        duration: Number.isFinite(value.duration)
-          ? value.duration
-          : current.duration,
-      })),
-    );
-    value.addEventListener("loadedmetadata", () =>
-      setStatus((current) => ({
-        ...current,
         isLoaded: true,
         duration: Number.isFinite(value.duration)
           ? value.duration
           : current.duration,
-      })),
-    );
-    value.addEventListener("play", () =>
-      setStatus((current) => ({ ...current, playing: true })),
-    );
-    value.addEventListener("pause", () =>
-      setStatus((current) => ({ ...current, playing: false })),
-    );
-    value.addEventListener("waiting", () =>
-      setStatus((current) => ({ ...current, isBuffering: true })),
-    );
-    value.addEventListener("canplay", () =>
-      setStatus((current) => ({ ...current, isBuffering: false })),
-    );
-    value.addEventListener("playing", () => {
-      failed.current = 0;
-      setStatus((current) => ({
-        ...current,
-        isBuffering: false,
-        isLoaded: true,
-        playing: true,
       }));
     });
-    value.addEventListener("ended", () => void ended());
-    value.addEventListener("error", () => void playbackError());
-    audio.current = value;
-    return value;
-  }
-
-  function currentEntry() {
-    return ref.current.entries[ref.current.index];
-  }
-
-  async function loadCurrent(play: boolean) {
-    const media = element();
-    const entry = currentEntry();
-    if (!media || !entry) return;
-    setStatus((current) => ({
-      ...current,
-      currentIndex: ref.current.index,
-      currentTime: 0,
-      duration: entry.song.duration,
-      isLoaded: false,
-      isBuffering: true,
-    }));
-    media.src = api.streamUrl(entry.song.id);
-    media.load();
-    if (!play) {
-      media.pause();
-      playIntent.current = false;
-      setBusy("");
-      return;
-    }
-    playIntent.current = true;
-    setBusy("Preparing audio…");
-    try {
-      await media.play();
-      setError("");
-      if (lastPlayed.current !== entry.key) {
+    on("play", () => setStatus((current) => ({ ...current, playing: true })));
+    on("pause", () => {
+      checkpoint();
+      setStatus((current) => ({ ...current, playing: false }));
+    });
+    on("waiting", () =>
+      setStatus((current) => ({ ...current, isBuffering: true })),
+    );
+    on("canplay", () =>
+      setStatus((current) => ({ ...current, isBuffering: false })),
+    );
+    on("playing", () => {
+      failed.current.clear();
+      const entry = currentEntry();
+      if (entry && lastPlayed.current !== entry.key) {
         lastPlayed.current = entry.key;
         const played = stringList(read(scope, "local-played", []));
         write(
@@ -152,28 +139,86 @@ function useController() {
         );
         void api.rest("scrobble", { id: entry.song.id }).catch(() => {});
       }
-    } catch {
+      setStatus((current) => ({
+        ...current,
+        isBuffering: false,
+        isLoaded: true,
+        playing: true,
+      }));
+    });
+    on("ended", () => void ended());
+    on("error", () => void playbackError());
+    audio.current = value;
+    return value;
+  }
+
+  function currentEntry() {
+    return ref.current.entries[ref.current.index];
+  }
+
+  function checkpoint() {
+    write(scope, "queue", ref.current);
+    checkpointAt.current = Date.now();
+  }
+
+  async function loadCurrent(play: boolean) {
+    const token = ++generation.current;
+    const media = element();
+    const entry = currentEntry();
+    if (!media || !entry) return;
+    setStatus((current) => ({
+      ...current,
+      currentIndex: ref.current.index,
+      currentTime: ref.current.position,
+      duration: entry.song.duration,
+      isLoaded: false,
+      isBuffering: true,
+    }));
+    pendingPosition.current = ref.current.position;
+    media.preload = play ? "auto" : "metadata";
+    sourceServer.current = api.activeServer;
+    media.src = api.streamUrl(entry.song.id, sourceServer.current);
+    media.load();
+    if (!play) {
+      media.pause();
+      playIntent.current = false;
       setBusy("");
-      if (playIntent.current)
+      return;
+    }
+    playIntent.current = true;
+    setBusy("Preparing audio…");
+    try {
+      await media.play();
+      if (token !== generation.current) return;
+      setError("");
+    } catch {
+      if (token === generation.current && playIntent.current)
         setError(
           "Playback could not start. Check that the server is reachable and the track is downloaded there.",
         );
     } finally {
-      setBusy("");
+      if (token === generation.current) setBusy("");
     }
   }
 
   async function playbackError() {
     if (!playIntent.current) return;
-    const ordered = addressOrder(api.addresses, api.activeServer);
-    if (failed.current < ordered.length - 1) {
-      failed.current++;
-      const next = ordered[failed.current] ?? ordered[0]!;
+    failed.current.add(sourceServer.current);
+    const next = addressOrder(api.addresses, sourceServer.current).find(
+      (address) => !failed.current.has(address),
+    );
+    if (next) {
       api.preferServer(next);
       await loadCurrent(true);
       return;
     }
-    setStatus((current) => ({ ...current, playing: false }));
+    generation.current++;
+    playIntent.current = false;
+    setStatus((current) => ({
+      ...current,
+      playing: false,
+      isBuffering: false,
+    }));
     setBusy("");
     setError(
       "Cannot play this track. Check your server, the file format and the current network route.",
@@ -208,24 +253,25 @@ function useController() {
   }
 
   useEffect(() => {
-    if (!ref.current.entries.length) return;
-    setStatus((current) => ({
-      ...current,
-      currentIndex: ref.current.index,
-      duration: ref.current.entries[ref.current.index]?.song.duration ?? 0,
-    }));
-    void loadCurrent(false);
+    if (ref.current.entries.length) void loadCurrent(false);
     return () => {
+      generation.current++;
       playIntent.current = false;
+      checkpoint();
+      listeners.current?.abort();
       audio.current?.pause();
+      audio.current?.removeAttribute("src");
+      audio.current?.load();
+      audio.current = null;
       if (sleepTimer.current) clearTimeout(sleepTimer.current);
     };
     // The initial queue is restored once for this account.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function pause() {
+    generation.current++;
     playIntent.current = false;
+    checkpoint();
     audio.current?.pause();
     setBusy("");
   }
@@ -241,8 +287,7 @@ function useController() {
     }
     setSleep(Date.now() + minutes * 60000);
     sleepTimer.current = setTimeout(() => {
-      playIntent.current = false;
-      audio.current?.pause();
+      pause();
       setSleep(null);
     }, minutes * 60000);
   }
@@ -251,7 +296,7 @@ function useController() {
     const selected = songs[index];
     if (!selected) return;
     setError("");
-    failed.current = 0;
+    failed.current.clear();
     commit(collection(songs, index));
     await loadCurrent(true);
   }
@@ -263,11 +308,22 @@ function useController() {
     if (!q.entries.length) {
       pause();
       audio.current?.removeAttribute("src");
+      audio.current?.load();
+      pendingPosition.current = null;
+      setStatus({
+        currentIndex: 0,
+        currentTime: 0,
+        duration: 0,
+        playing: false,
+        isLoaded: false,
+        isBuffering: false,
+      });
       setError("");
       sleepFor(0);
       return;
     }
-    if (q.entries[q.index]?.key !== currentKey) await loadCurrent(playIntent.current);
+    if (q.entries[q.index]?.key !== currentKey)
+      await loadCurrent(playIntent.current);
   }
 
   const value = {
@@ -279,8 +335,10 @@ function useController() {
     sleepAfterTrack,
     volume,
     setVolume(next: number) {
+      if (!Number.isFinite(next)) return;
       const bounded = Math.max(0, Math.min(1, next));
       setVolumeState(bounded);
+      write(scope, "volume", bounded);
       if (audio.current) audio.current.volume = bounded;
     },
     select,
@@ -291,6 +349,7 @@ function useController() {
     restore: async (restored: Queue) => {
       pause();
       sleepFor(0);
+      if (!restored.entries.length) return edit(restored);
       commit(restored);
       await loadCurrent(false);
     },
@@ -300,12 +359,14 @@ function useController() {
       if (!media || !ref.current.entries.length) return;
       if (!media.src || media.src === "") return loadCurrent(true);
       if (media.paused) {
+        const token = ++generation.current;
         playIntent.current = true;
         try {
           await media.play();
-          setError("");
+          if (token === generation.current) setError("");
         } catch {
-          setError("Playback could not resume. Retry the track.");
+          if (token === generation.current)
+            setError("Playback could not resume. Retry the track.");
         }
       } else {
         pause();
@@ -324,7 +385,10 @@ function useController() {
         media.currentTime = 0;
         return;
       }
-      const index = Math.max(0, ref.current.index - 1);
+      const index =
+        ref.current.index === 0 && ref.current.repeat === "all"
+          ? ref.current.entries.length - 1
+          : Math.max(0, ref.current.index - 1);
       if (index === ref.current.index) {
         if (media) media.currentTime = 0;
         return;
@@ -335,11 +399,20 @@ function useController() {
     },
     seek: async (seconds: number) => {
       const media = element();
-      if (!media) return;
-      media.currentTime = Math.max(0, seconds);
+      if (!media || !Number.isFinite(seconds)) return;
+      const position = Math.max(
+        0,
+        Math.min(
+          seconds,
+          Number.isFinite(media.duration) ? media.duration : Infinity,
+        ),
+      );
+      if (pendingPosition.current !== null) pendingPosition.current = position;
+      else media.currentTime = position;
+      commit({ ...ref.current, position });
     },
     retry: async () => {
-      failed.current = 0;
+      failed.current.clear();
       setError("");
       await loadCurrent(true);
     },
@@ -363,7 +436,9 @@ function useController() {
       await edit(move(ref.current, index, to));
     },
     drop: async (ids: Set<string>) => {
-      const entries = ref.current.entries.filter((entry) => !ids.has(entry.song.id));
+      const entries = ref.current.entries.filter(
+        (entry) => !ids.has(entry.song.id),
+      );
       if (entries.length === ref.current.entries.length) return;
       const currentKey = ref.current.entries[ref.current.index]?.key;
       const index = entries.findIndex((entry) => entry.key === currentKey);
@@ -401,6 +476,89 @@ function useController() {
       setSleepAfterTrack(true);
     },
   };
+
+  const controls = useRef(value);
+  controls.current = value;
+  useEffect(() => {
+    const mediaSession =
+      typeof navigator !== "undefined" ? navigator.mediaSession : undefined;
+    if (!mediaSession) return;
+    const handlers: Partial<
+      Record<MediaSessionAction, MediaSessionActionHandler>
+    > = {
+      play: () => {
+        if (audio.current?.paused) void controls.current.toggle();
+      },
+      pause: () => controls.current.pause(),
+      stop: () => {
+        controls.current.pause();
+        void controls.current.seek(0);
+      },
+      nexttrack: () => void controls.current.next(),
+      previoustrack: () => void controls.current.previous(),
+      seekto: (details) => {
+        if (details.seekTime !== undefined)
+          void controls.current.seek(details.seekTime);
+      },
+      seekforward: (details) =>
+        void controls.current.seek(
+          (audio.current?.currentTime ?? 0) + (details.seekOffset ?? 10),
+        ),
+      seekbackward: (details) =>
+        void controls.current.seek(
+          (audio.current?.currentTime ?? 0) - (details.seekOffset ?? 10),
+        ),
+    };
+    for (const [action, handler] of Object.entries(handlers)) {
+      try {
+        mediaSession.setActionHandler(action as MediaSessionAction, handler);
+      } catch {
+        /* Some webviews implement only a subset of media actions. */
+      }
+    }
+    return () => {
+      for (const action of Object.keys(handlers)) {
+        try {
+          mediaSession.setActionHandler(action as MediaSessionAction, null);
+        } catch {
+          /* Unsupported action. */
+        }
+      }
+      mediaSession.metadata = null;
+      mediaSession.playbackState = "none";
+    };
+  }, []);
+
+  const song = queue.entries[queue.index]?.song;
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaSession) return;
+    if (typeof MediaMetadata !== "undefined") {
+      navigator.mediaSession.metadata = song
+        ? new MediaMetadata({
+            title: song.title,
+            artist: song.artist,
+            album: song.album ?? "",
+          })
+        : null;
+    }
+  }, [song]);
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaSession) return;
+    navigator.mediaSession.playbackState = !song
+      ? "none"
+      : status.playing
+        ? "playing"
+        : "paused";
+    if (navigator.mediaSession.setPositionState) {
+      if (song && status.duration > 0 && Number.isFinite(status.duration)) {
+        navigator.mediaSession.setPositionState({
+          duration: status.duration,
+          position: Math.max(0, Math.min(status.currentTime, status.duration)),
+          playbackRate: 1,
+        });
+      } else navigator.mediaSession.setPositionState();
+    }
+  }, [song, status.playing, status.currentTime, status.duration]);
 
   function pausedState() {
     playIntent.current = true;

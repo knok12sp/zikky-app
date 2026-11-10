@@ -535,3 +535,19 @@ it("a quick background-to-foreground transition waits for encrypted checkpoint p
   expect(state.resumes).toBe(1);
   await worker.stop();
 });
+
+it("genre edits update downloaded metadata only for the current account", () => {
+  const worker = new Offline("a", api);
+  for (const scope of ["a", "b"])
+    state
+      .database!.prepare(
+        "INSERT INTO downloads(scope,id,song,state) VALUES(?,?,?,?)",
+      )
+      .run(scope, song.id, JSON.stringify(song), "complete");
+  worker.setGenre(song.id, "Jazz");
+  expect(JSON.parse(worker.list()[0]!.song).genre).toBe("Jazz");
+  expect(
+    JSON.parse(new Offline("b", api).list()[0]!.song).genre,
+  ).toBeUndefined();
+  expect(worker.list()[0]!.state).toBe("complete");
+});

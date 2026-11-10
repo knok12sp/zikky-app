@@ -244,6 +244,9 @@ path, and this repository does not ship a signed IPA.
 
 ## Desktop app for Linux
 
+Desktop playback remembers volume and the saved track position, resumes paused,
+and supports OS media controls where the browser/webview provides Media Session.
+
 The desktop app is built from the same Expo/React Native Web interface and
 packaged with Tauri. It is streaming-only: there is no offline Downloads screen
 on the computer.
@@ -473,3 +476,17 @@ addresses, credentials or personal library data in a report.
 
 Zikky is released under the [MIT License](LICENSE). The music you listen to is
 not covered by that license; all rights remain with its creators.
+
+
+### Personal genres and desktop library controls
+
+Open a song's options to set or clear its **Genre label**, then browse **Genres**
+in Library (or the desktop sidebar). Labels sync through the Zikky server and
+are separate for each account. Genre editing requires a server implementing
+Zikky's `setGenre` extension; other Subsonic servers can still supply genres for
+browsing. Editing requires a connection; successful edits also update metadata
+for an existing download on this device.
+
+Desktop track options include Play next, Add to queue, Add to playlist, and
+Create playlist. The Playlists view also creates empty playlists. Now Playing
+uses sharp artwork across the whole window, with controls overlaid at the bottom.

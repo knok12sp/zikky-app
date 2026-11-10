@@ -69,3 +69,12 @@ native modules, so note any behaviour that still needs a real phone.
 
 Use the GitHub issue templates. For security issues, follow
 [SECURITY.md](SECURITY.md) instead of opening a public issue.
+
+## Keep this repository client-only
+
+Run `npm run check:client-only` before submitting changes. CI checks tracked paths
+for backend implementation, server deployment files, local databases and key
+files. Keep server changes in the full Zikky repository. When sharing client fixes,
+copy only the reviewed client files and tests; never copy the full repository.
+The path check does not replace reviewing file contents for credentials or private
+server configuration.

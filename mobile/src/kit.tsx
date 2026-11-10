@@ -127,7 +127,8 @@ export function IconButton({
       accessibilityState={{ disabled, selected: active, busy }}
       disabled={disabled}
       hitSlop={6}
-      onPress={() => {
+      onPress={(event) => {
+        event?.stopPropagation();
         try {
           void Promise.resolve(onPress()).catch(report);
         } catch (e) {

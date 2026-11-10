@@ -268,6 +268,7 @@ beforeEach(() => {
           : undefined,
       artwork: (id: string) => `file:///offline/${id}.jpg`,
       enqueue: vi.fn(),
+      setGenre: vi.fn(),
       pump: vi.fn(),
       cancel: vi.fn(),
       remove: vi.fn(async (id) => {
@@ -723,4 +724,92 @@ it("the finish-current-song timer is available from Now playing", async () => {
   await press("Sleep timer");
   await press("Finish track");
   expect(state.player.sleepAfterCurrent).toHaveBeenCalledOnce();
+});
+
+import { DesktopPlayer } from "../src/desktop/DesktopPlayer";
+import { CreatePlaylist, TrackActions } from "../src/desktop/TrackActions";
+import { GenreEditor } from "../src/genre";
+
+it("desktop artwork fills the player without a framed foreground cover", async () => {
+  state.player.queue = collection([songs[0]!]);
+  await mount(<DesktopPlayer onClose={() => {}} onQueue={() => {}} />);
+  const art = tree!.root.findAllByType(Art);
+  expect(art).toHaveLength(1);
+  expect(art[0]!.props.fill).toBe(true);
+  expect(art[0]!.props.blurRadius).toBeUndefined();
+});
+it("desktop favorite state does not leak into the next song", async () => {
+  await mount(<DesktopPlayer onClose={() => {}} onQueue={() => {}} />);
+  await press("Add favorite");
+  expect(button("Remove favorite")).toBeTruthy();
+  state.player.queue = { ...state.player.queue, index: 1 };
+  await act(async () =>
+    tree!.update(
+      <QueryClientProvider client={state.queryClient}>
+        <ThemeProvider>
+          <DesktopPlayer onClose={() => {}} onQueue={() => {}} />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    ),
+  );
+  expect(button("Add favorite")).toBeTruthy();
+});
+it("saves a genre label and lets it be cleared", async () => {
+  await mount(<GenreEditor song={songs[0]!} />);
+  await act(async () =>
+    field("Genre label").props.onChangeText("  Heavy   Metal  "),
+  );
+  await press("Save genre");
+  expect(state.session.api.rest).toHaveBeenCalledWith("setGenre", {
+    id: "one",
+    genre: "Heavy Metal",
+  });
+  expect(content()).toContain("Genre saved");
+  expect(state.session.offline.setGenre).toHaveBeenCalledWith(
+    "one",
+    "Heavy Metal",
+  );
+  await act(async () => field("Genre label").props.onChangeText(""));
+  await press("Save genre");
+  expect(state.session.api.rest).toHaveBeenCalledWith("setGenre", {
+    id: "one",
+    genre: "",
+  });
+});
+it("desktop playlist creation trims names and blocks repeated submissions", async () => {
+  let finish!: () => void;
+  state.session.api.rest.mockImplementation((endpoint: string) =>
+    endpoint === "createPlaylist"
+      ? new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve({}),
+  );
+  await mount(<CreatePlaylist song={songs[0]!} />);
+  expect(button("Create playlist").props.disabled).toBe(true);
+  await act(async () =>
+    field("New playlist name").props.onChangeText("  Road trip  "),
+  );
+  const submit = button("Create playlist").props.onPress;
+  await act(async () => {
+    submit();
+    submit();
+  });
+  expect(state.session.api.rest).toHaveBeenCalledTimes(1);
+  expect(state.session.api.rest).toHaveBeenCalledWith("createPlaylist", {
+    name: "Road trip",
+    songId: ["one"],
+  });
+  await act(async () => finish());
+  expect(content()).toContain("Playlist created");
+});
+it("desktop track options add to an existing playlist without playing the song", async () => {
+  await mount(<TrackActions song={songs[0]!} />);
+  await press("Options for First");
+  await press("Add to My playlist");
+  expect(state.session.api.rest).toHaveBeenCalledWith("updatePlaylist", {
+    playlistId: "playlist",
+    songIdToAdd: "one",
+  });
+  expect(state.player.select).not.toHaveBeenCalled();
 });

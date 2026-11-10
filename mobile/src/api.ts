@@ -13,6 +13,7 @@ export type Song = {
   title: string;
   artist: string;
   album?: string;
+  genre?: string;
   albumId?: string;
   artistId?: string;
   duration: number;
@@ -80,7 +81,14 @@ export function parseSong(value: unknown): Song {
     typeof s.artist === "string" && s.artist.trim()
       ? s.artist
       : "Unknown artist";
-  for (const key of ["album", "albumId", "artistId", "coverArt", "starred"])
+  for (const key of [
+    "album",
+    "albumId",
+    "artistId",
+    "coverArt",
+    "starred",
+    "genre",
+  ])
     if (s[key] !== undefined && typeof s[key] !== "string")
       throw new Error("Invalid song metadata.");
   for (const key of ["onServer", "audioReady"])
@@ -282,7 +290,7 @@ export class Api {
         body.append(key, item);
     const retrySafe =
       endpoint.startsWith("get") ||
-      ["ping", "star", "unstar", "setRating"].includes(endpoint) ||
+      ["ping", "star", "unstar", "setRating", "setGenre"].includes(endpoint) ||
       (endpoint === "createPlaylist" && !!params.playlistId) ||
       (endpoint === "updatePlaylist" &&
         !params.songIdToAdd &&

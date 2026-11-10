@@ -1,3 +1,4 @@
+import { GenreEditor } from "./genre";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
@@ -534,6 +535,7 @@ export function SongList({
                     }
                   />
                   <SheetHeading>Track</SheetHeading>
+                  <GenreEditor key={selected.id} song={selected} />
                   <SheetRow
                     title={
                       selected.starred ? "Remove favorite" : "Add favorite"

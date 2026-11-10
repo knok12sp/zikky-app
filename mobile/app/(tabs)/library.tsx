@@ -1,18 +1,27 @@
 import { useState, useEffect, useRef } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
-import { Page, Label, Row, Busy, Field, report, useTheme } from "../../src/ui";
+import {
+  Page,
+  Label,
+  Row,
+  Busy,
+  Field,
+  report,
+  useTheme,
+  Action,
+} from "../../src/ui";
 import { SongList } from "../../src/components";
 import { useSongs, usePlaylists } from "../../src/data";
 import { useSession, queryClient } from "../../src/session";
 import { watchDownloads, completedSongs } from "../../src/offline";
 import { read } from "../../src/db";
-import { matchesSong, stringList } from "../../src/library";
+import { matchesSong, stringList, genreGroups } from "../../src/library";
 import { Chip, Segmented, SectionTitle, Card, IconButton } from "../../src/kit";
 import { Icon } from "../../src/icon";
 import { radius, spacing, type } from "../../src/theme";
 
-const MODES = ["Songs", "Albums", "Artists", "Playlists"] as const;
+const MODES = ["Songs", "Albums", "Artists", "Genres", "Playlists"] as const;
 const SORTS = [
   ["title", "Title"],
   ["artist", "Artist"],
@@ -120,18 +129,25 @@ export default function Library() {
   const data = (offline ? downloaded : (songs.data ?? [])).filter((s) =>
     matchesSong(s, filter),
   );
-  const groups = Array.from(
-    new Map(
-      data.map((s) =>
-        mode === "Albums"
-          ? [
-              s.albumId,
-              { id: s.albumId, name: s.album ?? "Singles", detail: s.artist },
-            ]
-          : [s.artistId, { id: s.artistId, name: s.artist, detail: "" }],
-      ),
-    ).values(),
-  ).filter((g) => g.id);
+  const groups =
+    mode === "Genres"
+      ? genreGroups(data).map((g) => ({ ...g, detail: `${g.count} tracks` }))
+      : Array.from(
+          new Map(
+            data.map((s) =>
+              mode === "Albums"
+                ? [
+                    s.albumId,
+                    {
+                      id: s.albumId,
+                      name: s.album ?? "Singles",
+                      detail: s.artist,
+                    },
+                  ]
+                : [s.artistId, { id: s.artistId, name: s.artist, detail: "" }],
+            ),
+          ).values(),
+        ).filter((g) => g.id);
   if (sort === "title") groups.sort((a, b) => a.name.localeCompare(b.name));
   else if (sort === "artist")
     groups.sort(
@@ -190,10 +206,11 @@ export default function Library() {
             maxLength={256}
           />
           <Row>
-            <Chip
+            <Action
+              disabled={creating || offline || !name.trim()}
               title={creating ? "Creating…" : "Create playlist"}
               onPress={async () => {
-                if (createPending.current) return;
+                if (createPending.current || !name.trim() || offline) return;
                 createPending.current = true;
                 setCreating(true);
                 try {
@@ -258,7 +275,7 @@ export default function Library() {
           ? "Your offline collection"
           : mode === "Playlists"
             ? "Playlists and smart collections"
-            : "Everything saved on your server"
+            : "Your saved music"
       }
       scroll={false}
     >
@@ -352,13 +369,24 @@ export default function Library() {
           renderItem={({ item }) => (
             <GroupRow
               title={item.name + (item.detail ? " · " + item.detail : "")}
-              detail={mode === "Albums" ? "Album" : "Artist"}
+              detail={
+                mode === "Genres"
+                  ? item.detail
+                  : mode === "Albums"
+                    ? "Album"
+                    : "Artist"
+              }
               marker={item.name.slice(0, 1).toUpperCase()}
               onPress={() =>
                 router.push({
                   pathname: "/collection",
                   params: {
-                    kind: mode === "Albums" ? "album" : "artist",
+                    kind:
+                      mode === "Genres"
+                        ? "genre"
+                        : mode === "Albums"
+                          ? "album"
+                          : "artist",
                     id: item.id!,
                     name: item.name,
                     offline: offline ? "1" : "0",

@@ -7,7 +7,9 @@ export function stringList(value: unknown): string[] {
 export function matchesSong(song: Song, query: string) {
   const normalize = (s: string) =>
     s.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase();
-  const text = normalize(`${song.title} ${song.artist} ${song.album ?? ""}`);
+  const text = normalize(
+    `${song.title} ${song.artist} ${song.album ?? ""} ${song.genre ?? ""}`,
+  );
   return normalize(query)
     .trim()
     .split(/\s+/)
@@ -23,6 +25,29 @@ export function collectionSongs(
     (song) =>
       (!offlineIds || offlineIds.has(song.id)) &&
       (kind === "playlist" ||
-        (kind === "album" ? song.albumId === id : song.artistId === id)),
+        (kind === "genre"
+          ? genreKey(song) === id
+          : kind === "album"
+            ? song.albumId === id
+            : song.artistId === id)),
   );
+}
+
+export function genreKey(song: Song) {
+  return song.genre?.trim().toLocaleLowerCase() || "";
+}
+export function genreGroups(songs: Song[]) {
+  const groups = new Map<string, { id: string; name: string; count: number }>();
+  for (const song of songs) {
+    const id = genreKey(song);
+    const group = groups.get(id);
+    if (group) group.count++;
+    else
+      groups.set(id, {
+        id,
+        name: song.genre?.trim() || "Unlabelled",
+        count: 1,
+      });
+  }
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

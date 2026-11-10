@@ -27,6 +27,7 @@ export class Offline {
   list(): Download[] {
     return [];
   }
+  setGenre(_id: string, _genre: string) {}
   path(_id: string) {
     return "";
   }

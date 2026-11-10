@@ -19,6 +19,8 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: mobile/package-lock.json
+      - name: Enforce client-only repository boundary
+        run: npm run check:client-only
       - name: Install dependencies
         working-directory: mobile
         run: npm ci

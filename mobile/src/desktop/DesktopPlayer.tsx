@@ -1,5 +1,11 @@
-import { useState } from "react";
-import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { useRef, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
 import { Art } from "../components";
@@ -29,18 +35,22 @@ export function DesktopPlayer({
   const p = usePlayback();
   const { session } = useSession();
   const { colors } = useTheme();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const [options, setOptions] = useState(false);
-  const [favorite, setFavorite] = useState<boolean | null>(null);
+  const [favorite, setFavorite] = useState<{
+    id: string;
+    value: boolean;
+  } | null>(null);
+  const lastVolume = useRef(p.volume || 0.7);
   const [rated, setRated] = useState<{ id: string; value: number } | null>(
     null,
   );
   const song = p.queue.entries[p.queue.index]?.song;
   const upcoming = p.queue.entries.slice(p.queue.index + 1, p.queue.index + 4);
-  const starred = favorite ?? !!song?.starred;
-  const rating = rated && rated.id === song?.id ? rated.value : (song?.rating ?? 0);
+  const starred = favorite?.id === song?.id ? favorite!.value : !!song?.starred;
+  const rating =
+    rated && rated.id === song?.id ? rated.value : (song?.rating ?? 0);
   const wide = width >= 860;
-  const cover = Math.round(Math.min(wide ? 360 : width * 0.62, height * 0.36));
 
   async function rate(value: number) {
     if (!song) return;
@@ -61,12 +71,12 @@ export function DesktopPlayer({
   async function toggleFavorite() {
     if (!song) return;
     const next = !starred;
-    setFavorite(next);
+    setFavorite({ id: song.id, value: next });
     try {
       await session!.api.rest(next ? "star" : "unstar", { id: song.id });
       await queryClient.invalidateQueries({ queryKey: [session!.scope] });
     } catch (e) {
-      setFavorite(!next);
+      setFavorite({ id: song.id, value: !next });
       report(e);
     }
   }
@@ -94,7 +104,7 @@ export function DesktopPlayer({
         }}
       >
         {song ? (
-          <Art song={song} fill artworkSize={1200} blurRadius={36} />
+          <Art song={song} fill artworkSize={1200} />
         ) : (
           <View style={{ flex: 1, backgroundColor: colors.surfaceInset }} />
         )}
@@ -105,9 +115,10 @@ export function DesktopPlayer({
         locations={[0, 0.42, 1]}
         style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       />
-      <View
-        style={{
-          flex: 1,
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
           paddingHorizontal: wide ? 64 : 32,
           paddingTop: 28,
           paddingBottom: 36,
@@ -158,29 +169,7 @@ export function DesktopPlayer({
           </View>
         </View>
 
-        <View
-          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-        >
-          {!!song && (
-            <View
-              style={{
-                width: cover,
-                height: cover,
-                borderRadius: 20,
-                overflow: "hidden",
-                borderWidth: 1,
-                borderColor: "rgba(244,248,241,0.16)",
-                shadowColor: "#000",
-                shadowOpacity: 0.5,
-                shadowRadius: 34,
-                shadowOffset: { width: 0, height: 18 },
-                elevation: 18,
-              }}
-            >
-              <Art song={song} size={cover} radius={20} artworkSize={1200} />
-            </View>
-          )}
-        </View>
+        <View style={{ flex: 1, minHeight: 48 }} />
 
         <View
           style={{
@@ -214,7 +203,9 @@ export function DesktopPlayer({
               </Text>
             </View>
             {!!song && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
                 <View
                   style={{
                     width: 6,
@@ -242,12 +233,18 @@ export function DesktopPlayer({
                 onSlidingComplete={(value) => void p.seek(value)}
                 style={{ width: "100%", height: 34 }}
               />
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
+              >
                 <Text style={[type.numeric, { color: accent, fontSize: 12 }]}>
                   {clock(p.status.currentTime)}
                 </Text>
                 <Text style={[type.numeric, { color: soft, fontSize: 12 }]}>
-                  −{clock(Math.max(0, p.status.duration - p.status.currentTime))}
+                  −
+                  {clock(Math.max(0, p.status.duration - p.status.currentTime))}
                 </Text>
               </View>
             </View>
@@ -310,7 +307,9 @@ export function DesktopPlayer({
                 flexWrap: "wrap",
               }}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+              >
                 <IconButton
                   name={starred ? "heartFilled" : "heart"}
                   label={starred ? "Remove favorite" : "Add favorite"}
@@ -381,7 +380,12 @@ export function DesktopPlayer({
                 <IconButton
                   name={p.volume === 0 ? "volumeOff" : "volume"}
                   label={p.volume === 0 ? "Unmute" : "Mute"}
-                  onPress={() => p.setVolume(p.volume === 0 ? 0.7 : 0)}
+                  onPress={() => {
+                    if (p.volume > 0) {
+                      lastVolume.current = p.volume;
+                      p.setVolume(0);
+                    } else p.setVolume(lastVolume.current);
+                  }}
                   size={36}
                   color={soft}
                 />
@@ -414,7 +418,9 @@ export function DesktopPlayer({
                 <Text style={[type.micro, { color: soft, letterSpacing: 1.6 }]}>
                   SLEEP TIMER
                 </Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                >
                   <Chip
                     title="Finish track"
                     active={p.sleepAfterTrack}
@@ -509,7 +515,7 @@ export function DesktopPlayer({
             </View>
           )}
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }

@@ -6,6 +6,7 @@
   "description": "Native iPhone and Android player for Subsonic-compatible music servers",
   "scripts": {
     "test": "npm --prefix mobile test",
-    "typecheck": "npm --prefix mobile run typecheck"
+    "typecheck": "npm --prefix mobile run typecheck",
+    "check:client-only": "node --test scripts/check-client-only.test.mjs && node scripts/check-client-only.mjs"
   }
 }
