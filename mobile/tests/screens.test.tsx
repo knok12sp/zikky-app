@@ -9,6 +9,7 @@ import * as FS from "expo-file-system/legacy";
 const state = vi.hoisted(() => ({
   session: null as any,
   player: null as any,
+  books: { current: null as any, playing: false, position: 0, rate: 1, start: vi.fn(), toggle: vi.fn(), seek: vi.fn(), next: vi.fn(), previous: vi.fn(), setRate: vi.fn() },
   params: {} as Record<string, string>,
   saved: new Map<string, any>(),
   downloads: [] as Download[],
@@ -147,6 +148,11 @@ vi.mock("../src/session", () => ({
 vi.mock("../src/playback", () => ({
   usePlayback: () => state.player,
   PlaybackProvider: ({ children }: any) => children,
+}));
+vi.mock("../src/book-playback", () => ({
+  BOOK_RATES: [0.75, 1, 1.25, 1.5, 1.75, 2],
+  BookPlaybackProvider: ({ children }: any) => children,
+  useBookPlayback: () => state.books,
 }));
 import Layout from "../app/_layout";
 import Home from "../app/(tabs)/index";
@@ -812,4 +818,24 @@ it("desktop track options add to an existing playlist without playing the song",
     songIdToAdd: "one",
   });
   expect(state.player.select).not.toHaveBeenCalled();
+});
+
+import BookScreen from "../app/book";
+it("audiobook chapter list is scrollable and seek and volume controls operate on the player", async () => {
+  const book = { id: "book", title: "Xenos", author: "Dan Abnett", duration: 2800, chapterCount: 28, hasCover: false,
+    chapters: Array.from({length: 28}, (_, i) => ({ id: `ch${i}`, title: `Chapter ${i + 1}`, duration: 100 })) };
+  state.params = { id: "book" };
+  vi.spyOn(state.session.api, "book").mockResolvedValue(book);
+  Object.assign(state.books, { current: { book, index: 0 }, chapterIndex: 0, volume: 1, setVolume: vi.fn(), sleepMinutes: 0, setSleepMinutes: vi.fn() });
+  await mount(<BookScreen />);
+  expect(tree!.root.findAllByType("ScrollView" as any).length).toBeGreaterThan(0);
+  await press("Play chapter 28: Chapter 28");
+  expect(state.books.start).toHaveBeenCalledWith(book, 27, 0);
+  const sliders = tree!.root.findAll((node) => node.props.accessibilityLabel === "Chapter position");
+  await act(async () => sliders[0]!.props.onSlidingComplete(45));
+  expect(state.books.seek).toHaveBeenCalledWith(45);
+  const volume = tree!.root.findAll((node) => node.props.accessibilityLabel === "Audiobook volume")[0]!;
+  await act(async () => volume.props.onValueChange(0.4));
+  expect((state.books as any).setVolume).toHaveBeenCalledWith(0.4);
+  state.books.current = null;
 });

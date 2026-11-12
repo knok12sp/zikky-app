@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { useSession } from "./session";
+import { claimAudio } from "./audio-owner";
 import { addressOrder, type Song } from "./api";
 import {
   type Queue,
@@ -295,6 +296,7 @@ function useController() {
   async function select(songs: Song[], index: number) {
     const selected = songs[index];
     if (!selected) return;
+    claimAudio("music");
     setError("");
     failed.current.clear();
     commit(collection(songs, index));

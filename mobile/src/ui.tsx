@@ -4,7 +4,6 @@ import {
   Text,
   View,
   TextInput,
-  StyleSheet,
   useColorScheme,
   Alert,
   ActivityIndicator,
@@ -15,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { read, write } from "./db";
-import { dark, light, spacing, radius, type, mono, Palette } from "./theme";
+import { dark, light, spacing, radius, type, Palette } from "./theme";
 import { Icon, IconName } from "./icon";
 
 type ThemeValue = {
@@ -50,12 +49,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 export const useTheme = () => useContext(Theme);
-
-/** The current palette plus the token groups, for screens that want both. */
-export const useTokens = () => {
-  const t = useTheme();
-  return { ...t, mono };
-};
 
 export function Label({
   children,
@@ -350,10 +343,12 @@ export function Busy({ label = "Loading" }: { label?: string }) {
 }
 
 export function report(error: unknown) {
-  Alert.alert(
-    "Could not finish",
-    error instanceof Error ? error.message : "Please try again.",
-  );
+  const message = error instanceof Error ? error.message : "Please try again.";
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    window.alert(`Could not finish\n\n${message}`);
+    return;
+  }
+  Alert.alert("Could not finish", message);
 }
 
 export function confirm(title: string, message: string, fn: () => void) {
@@ -362,8 +357,3 @@ export function confirm(title: string, message: string, fn: () => void) {
     { text: "Confirm", style: "destructive", onPress: fn },
   ]);
 }
-
-export const styles = StyleSheet.create({
-  card: { paddingVertical: 14, gap: 10, borderBottomWidth: 1 },
-  art: { width: 52, height: 52, borderRadius: 10 },
-});

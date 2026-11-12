@@ -164,6 +164,18 @@ describe("API trust boundaries", () => {
   });
 });
 describe("authoritative queue", () => {
+  it("keeps readable entries when one saved entry no longer parses", () => {
+    const q = { ...collection(songs.slice(0, 2), 1), position: 42 };
+    const restored = restoreQueue({
+      ...q,
+      entries: [q.entries[0], { ...q.entries[1]!, song: { id: 7 } }],
+    });
+    expect(restored.entries.map((e) => e.key)).toEqual([q.entries[0]!.key]);
+    expect(restored.original).toEqual([q.entries[0]!.key]);
+    expect(restored.index).toBe(0);
+    expect(restored.position).toBe(42);
+  });
+
   it("restores original ordering with duplicate songs after shuffle", () => {
     const q = collection([...songs, songs[0]!], 4);
     const shuffled = shuffleQueue(q, () => 0.3);

@@ -39,12 +39,12 @@ export default function Layout() {
         },
       }}
     >
-      {["index", "library", "search"].map((name, i) => (
+      {["index", "library", "search", "books"].map((name, i) => (
         <Tabs.Screen
           key={name}
           name={name}
           options={{
-            title: ["Home", "Library", "Search"][i],
+            title: ["Home", "Library", "Search", "Books"][i],
             tabBarIcon: ({ color, focused }) => (
               <View
                 style={{
@@ -58,7 +58,8 @@ export default function Layout() {
               >
                 <Icon
                   name={
-                    (["home", "library", "search"] as IconName[])[i] ?? "note"
+                    (["home", "library", "search", "note"] as IconName[])[i] ??
+                    "note"
                   }
                   size={21}
                   color={typeof color === "string" ? color : colors.muted}

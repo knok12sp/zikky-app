@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -117,10 +117,13 @@ export default function Player() {
 
   const song = p.queue.entries[p.queue.index]?.song;
   const upcoming = p.queue.entries.slice(p.queue.index + 1, p.queue.index + 3);
-  const download = song
-    ? session?.offline.list().find((item) => item.id === song.id)
-    : undefined;
-  const onPhone = song ? !!session?.offline.local(song.id) : false;
+  const { download, onPhone } = useMemo(() => {
+    const items = song ? session?.offline.list() : undefined;
+    return {
+      download: items?.find((item) => item.id === song?.id),
+      onPhone: song ? !!session?.offline.local(song.id) : false,
+    };
+  }, [session, song, tick]);
   const saving = !!download && !onPhone && download.state !== "failed";
   const downloadFailed = download?.state === "failed";
   const starred = song

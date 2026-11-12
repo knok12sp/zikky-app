@@ -13,10 +13,21 @@ export function read<T>(scope: string, key: string, fallback: T): T {
   }
 }
 export function write(scope: string, key: string, value: unknown) {
+  const store = storage();
+  if (!store) return;
+  const name = keyFor(scope, key);
+  const encoded = JSON.stringify(value);
   try {
-    storage()?.setItem(keyFor(scope, key), JSON.stringify(value));
+    store.setItem(name, encoded);
+    return;
   } catch {
-    /* Storage full or unavailable: cached data is optional. */
+    /* Quota is full: optional list caches go first, then try this write once more. */
+  }
+  clearCachedMetadata(scope);
+  try {
+    store.setItem(name, encoded);
+  } catch {
+    /* Cached data is optional. */
   }
 }
 export function clearCachedMetadata(scope: string) {

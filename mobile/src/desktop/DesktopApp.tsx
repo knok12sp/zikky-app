@@ -22,6 +22,8 @@ import { matchesSong, genreGroups, genreKey } from "../library";
 import { radius, spacing, type } from "../theme";
 import { DesktopPlayer } from "./DesktopPlayer";
 
+import { DesktopBooks } from "./DesktopBooks";
+
 type ViewKey =
   | "home"
   | "songs"
@@ -29,6 +31,7 @@ type ViewKey =
   | "artists"
   | "genres"
   | "playlists"
+  | "books"
   | "favorites"
   | "settings";
 
@@ -45,6 +48,7 @@ const NAV: { key: ViewKey; title: string; icon: IconName }[] = [
   { key: "albums", title: "Albums", icon: "library" },
   { key: "artists", title: "Artists", icon: "artist" },
   { key: "genres", title: "Genres", icon: "library" },
+  { key: "books", title: "Books", icon: "note" },
   { key: "playlists", title: "Playlists", icon: "queue" },
   { key: "favorites", title: "Favorites", icon: "heart" },
 ];
@@ -1340,7 +1344,14 @@ export function DesktopApp() {
         </View>
       </View>
 
-      <View style={{ flex: 1, minWidth: 0 }}>{main}</View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Kept mounted so an audiobook keeps playing while another view is open. */}
+        <ScrollView style={{ flex: 1, minHeight: 0, display: view === "books" ? "flex" : "none" }}
+          contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg, paddingBottom: 120 }}>
+          <DesktopBooks />
+        </ScrollView>
+        {view === "books" ? null : main}
+      </View>
 
       {queueOpen && !persistentQueue && (
         <Pressable

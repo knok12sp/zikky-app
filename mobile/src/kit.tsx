@@ -495,43 +495,6 @@ export function EmptyState({
   );
 }
 
-export function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={{ gap: 2 }}>
-      <Text
-        style={[
-          type.numeric,
-          {
-            color: tone ?? colors.text,
-            fontSize: 17,
-            lineHeight: 22,
-            letterSpacing: 0.2,
-          },
-        ]}
-      >
-        {value}
-      </Text>
-      <Text
-        style={[
-          type.micro,
-          { color: colors.faint, textTransform: "uppercase" },
-        ]}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
-
 export function BackButton({ onPress }: { onPress?: () => unknown }) {
   return (
     <IconButton

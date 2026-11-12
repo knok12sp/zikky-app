@@ -137,9 +137,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, [session]);
   async function logout() {
-    await session?.offline.stop();
-    await queryClient.cancelQueries();
-    await clearConnection();
+    try {
+      await session?.offline.stop();
+    } catch {
+      /* A failing local cleanup must never keep the account signed in. */
+    }
+    await queryClient.cancelQueries().catch(() => {});
+    await clearConnection().catch(() => {});
     queryClient.clear();
     setSession(null);
   }

@@ -4,6 +4,7 @@ import { Platform, View, Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SessionProvider, useSession } from "../src/session";
 import { PlaybackProvider } from "../src/playback";
+import { BookPlaybackProvider } from "../src/book-playback";
 import {
   ThemeProvider,
   Page,
@@ -166,6 +167,7 @@ function Gate() {
           </View>
         </View>
       ) : (
+        <BookPlaybackProvider>
         <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <Stack
             screenOptions={{
@@ -173,10 +175,11 @@ function Gate() {
               contentStyle: { backgroundColor: colors.bg },
             }}
           />
-          {!["/", "/library", "/search", "/player", "/queue"].includes(
+          {!["/", "/library", "/search", "/books", "/book", "/player", "/queue"].includes(
             pathname,
           ) && <MiniPlayer />}
         </View>
+        </BookPlaybackProvider>
       )}
     </PlaybackProvider>
   );

@@ -23,6 +23,7 @@ import {
   restoreQueue,
 } from "./queue";
 import { read, write } from "./db";
+import { claimAudio } from "./audio-owner";
 import * as FS from "expo-file-system/legacy";
 import { playbackSource } from "./playback-source";
 import type { AudioPlaylist } from "expo-audio";
@@ -54,6 +55,7 @@ function useController() {
   const lastPlayed = useRef("");
   const lastArtwork = useRef("");
   const lastPlaying = useRef(false);
+  const lastCommit = useRef(0);
   const failoverAttempts = useRef(new Set<string>());
   const sourceServers = useRef(new Map<string, string>());
   const audioSession = useRef<Promise<void> | null>(null);
@@ -68,10 +70,10 @@ function useController() {
       throw e;
     }));
   }
-  function commit(q: Queue) {
+  function commit(q: Queue, persist = true) {
     ref.current = q;
     setQueue(q);
-    write(scope, "queue", q);
+    if (persist) write(scope, "queue", q);
   }
   const artworkPaths = useRef<Record<string, string>>({});
   const artworkPending = useRef(new Map<string, Promise<string | undefined>>());
@@ -227,11 +229,20 @@ function useController() {
         setError(
           "This track could not be played. Check your server and retry playback.",
         );
-      commit({
+      const next = {
         ...ref.current,
         index: s.currentIndex,
         position: s.currentTime,
-      });
+      };
+      // Rewriting the whole queue every second is expensive; checkpoint the
+      // position, then persist track changes, pauses, errors and a 5 s tick.
+      const persist =
+        hasError ||
+        (!s.playing && next.position !== ref.current.position) ||
+        next.index !== ref.current.index ||
+        Date.now() - lastCommit.current >= 5000;
+      if (persist) lastCommit.current = Date.now();
+      commit(next, persist);
       if (hasError && hadPlaybackIntent) {
         const token = generation.current;
         const pauseCount = "pauseCount" in s ? s.pauseCount : undefined;
@@ -273,16 +284,22 @@ function useController() {
       }
       if (s.playing && s.isLoaded && lastArtwork.current !== current.key) {
         lastArtwork.current = current.key;
-        void art(current.song).then(() => {
-          if (ref.current.entries[s.currentIndex]?.key === current.key)
-            native.updateLockScreenMetadata(metadata(current.song));
-        });
+        void art(current.song)
+          .then(() => {
+            if (ref.current.entries[s.currentIndex]?.key === current.key)
+              native.updateLockScreenMetadata(metadata(current.song));
+          })
+          .catch(() => {});
       }
       if (s.playing && s.isLoaded) failoverAttempts.current.clear();
     });
-    return () => listener.remove();
+    return () => {
+      write(scope, "queue", ref.current);
+      listener.remove();
+    };
   }, [native]);
   async function select(songs: Song[], index: number) {
+    claimAudio("music");
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;

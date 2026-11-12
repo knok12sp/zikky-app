@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Page, useTheme } from "../../src/ui";
 import { useSongs } from "../../src/data";
@@ -8,6 +9,7 @@ import { Card, SectionTitle, IconButton, Banner } from "../../src/kit";
 import { radius, spacing, type } from "../../src/theme";
 import { usePlayback } from "../../src/playback";
 import { useSession } from "../../src/session";
+import { watchDownloads } from "../../src/offline";
 
 function shortCollection(id: string, name: string) {
   router.push({
@@ -91,9 +93,15 @@ export default function Home() {
   const { colors } = useTheme();
   const { session } = useSession();
   const now = player.queue.entries[player.queue.index]?.song;
-  const onPhone = session
-    ? session.offline.list().filter((d) => d.state === "complete").length
-    : 0;
+  const [tick, setTick] = useState(0);
+  useEffect(() => watchDownloads(() => setTick((v) => v + 1)), []);
+  const onPhone = useMemo(
+    () =>
+      session
+        ? session.offline.list().filter((d) => d.state === "complete").length
+        : 0,
+    [session, tick],
+  );
   return (
     <Page
       title=""

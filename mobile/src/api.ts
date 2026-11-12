@@ -23,6 +23,28 @@ export type Song = {
   onServer?: boolean;
   audioReady?: boolean;
 };
+export type BookChapter = {
+  id: string;
+  index: number;
+  title: string;
+  duration: number;
+};
+export type BookProgress = {
+  chapterId: string;
+  position: number;
+  updated: string;
+  chapterIndex?: number;
+};
+export type Book = {
+  id: string;
+  author: string;
+  title: string;
+  chapterCount: number;
+  duration: number;
+  hasCover: boolean;
+  progress?: BookProgress | null;
+};
+export type BookDetail = Book & { chapters: BookChapter[] };
 export type Playlist = {
   id: string;
   name: string;
@@ -437,6 +459,80 @@ export class Api {
       playlistId: id,
       songIndexToRemove: String(index),
     });
+  }
+  books(signal?: AbortSignal) {
+    return this.request("/native/v1/books", { signal }) as Promise<{
+      books: Book[];
+    }>;
+  }
+  book(id: string, signal?: AbortSignal) {
+    return this.request(
+      "/native/v1/books/" + encodeURIComponent(id),
+      { signal },
+    ) as Promise<BookDetail>;
+  }
+  bookChapterMedia(bookId: string, chapterId: string) {
+    return {
+      uri: this.url(
+        "/native/v1/books/" +
+          encodeURIComponent(bookId) +
+          "/chapters/" +
+          encodeURIComponent(chapterId) +
+          "/audio",
+      ),
+      headers: this.headers(),
+    };
+  }
+  /** Salted-token URLs so a plain <audio> or <img> element can load them. */
+  bookChapterUrl(bookId: string, chapterId: string, server = this.activeServerValue) {
+    return (
+      server +
+      "/rest/getBookChapter?" +
+      new URLSearchParams({
+        u: this.credentials.username,
+        t: this.token,
+        s: this.salt,
+        v: "1.16.1",
+        c: "Zikky",
+        f: "json",
+        id: bookId,
+        chapter: chapterId,
+      }).toString()
+    );
+  }
+  bookCoverUrl(bookId: string, server = this.activeServerValue) {
+    return (
+      server +
+      "/rest/getBookCover?" +
+      new URLSearchParams({
+        u: this.credentials.username,
+        t: this.token,
+        s: this.salt,
+        v: "1.16.1",
+        c: "Zikky",
+        f: "json",
+        id: bookId,
+      }).toString()
+    );
+  }
+  bookCover(bookId: string) {
+    return {
+      uri: this.url("/native/v1/books/" + encodeURIComponent(bookId) + "/cover"),
+      headers: this.headers(),
+    };
+  }
+  saveBookProgress(bookId: string, chapterId: string, position: number) {
+    return this.request(
+      "/native/v1/books/" + encodeURIComponent(bookId) + "/progress",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Zikky-Client": "native-v1",
+        },
+        body: JSON.stringify({ chapterId, position: Math.round(position) }),
+      },
+    );
   }
   media(id: string) {
     const query = this.signedQuery();

@@ -116,43 +116,69 @@ export function nextIndex(q: Queue, automatic: boolean): number | null {
 }
 
 export function restoreQueue(value: unknown): Queue {
-  try {
-    if (!value || typeof value !== "object") return emptyQueue();
-    const q = value as Queue;
-    if (
-      !Array.isArray(q.entries) ||
-      !Array.isArray(q.original) ||
-      !Number.isInteger(q.index) ||
-      typeof q.shuffle !== "boolean" ||
-      !["none", "all", "single"].includes(q.repeat) ||
-      !Number.isFinite(q.position) ||
-      q.position < 0
-    )
-      return emptyQueue();
-    const entries = q.entries.map((e) => {
-      if (!e || typeof e.key !== "string" || !e.key) throw Error();
-      return { ...e, song: parseSong(e.song) };
-    });
-    const keys = entries.map((e) => e.key);
-    const keySet = new Set(keys);
-    if (
-      keySet.size !== keys.length ||
-      q.original.length !== keys.length ||
-      new Set(q.original).size !== keys.length ||
-      q.original.some((k) => !keySet.has(k)) ||
-      q.index < 0 ||
-      q.index > Math.max(0, entries.length - 1)
-    )
-      return emptyQueue();
-    return {
-      entries,
-      original: q.original,
-      index: q.index,
-      shuffle: q.shuffle,
-      repeat: q.repeat,
-      position: q.position,
-    };
-  } catch {
+  if (!value || typeof value !== "object") return emptyQueue();
+  const q = value as Queue;
+  if (
+    typeof q.shuffle !== "boolean" ||
+    !["none", "all", "single"].includes(q.repeat) ||
+    !Number.isFinite(q.position) ||
+    q.position < 0
+  )
     return emptyQueue();
+  const parse = (candidate: unknown) => {
+    const e = candidate as Entry;
+    if (!e || typeof e.key !== "string" || !e.key) throw Error();
+    return { ...e, song: parseSong(e.song) };
+  };
+  let entries: Entry[];
+  let recovered = false;
+  try {
+    if (!Array.isArray(q.entries)) throw Error();
+    entries = q.entries.map(parse);
+  } catch {
+    // One incompatible entry after an upgrade must not throw away the whole queue.
+    recovered = true;
+    entries = [];
+    if (Array.isArray(q.entries)) {
+      for (const candidate of q.entries) {
+        try {
+          entries.push(parse(candidate));
+        } catch {
+          /* skip the unreadable entry */
+        }
+      }
+    }
   }
+  if (!entries.length) return emptyQueue();
+  const keys = entries.map((e) => e.key);
+  const keySet = new Set(keys);
+  if (keySet.size !== keys.length) return emptyQueue();
+  let original = q.original;
+  if (recovered) {
+    const kept = Array.isArray(original) ? original.filter((k) => keySet.has(k)) : [];
+    original = kept.length === keys.length ? kept : keys;
+  }
+  const index = recovered
+    ? Number.isInteger(q.index) && q.index >= 0
+      ? Math.min(q.index, entries.length - 1)
+      : 0
+    : q.index;
+  if (
+    !Array.isArray(original) ||
+    original.length !== keys.length ||
+    new Set(original).size !== keys.length ||
+    original.some((k) => !keySet.has(k)) ||
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index > Math.max(0, entries.length - 1)
+  )
+    return emptyQueue();
+  return {
+    entries,
+    original,
+    index,
+    shuffle: q.shuffle,
+    repeat: q.repeat,
+    position: q.position,
+  };
 }

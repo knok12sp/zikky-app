@@ -490,3 +490,7 @@ for an existing download on this device.
 Desktop track options include Play next, Add to queue, Add to playlist, and
 Create playlist. The Playlists view also creates empty playlists. Now Playing
 uses sharp artwork across the whole window, with controls overlaid at the bottom.
+
+### Audiobooks on a Zikky server
+
+The Books tab supports chapter selection, seeking, volume, playback speed, sleep timers and per-account progress. Audiobooks require a Zikky server; standard Subsonic servers may not provide this feature. Books stream from the server and are not downloaded for offline listening. Embedded M4B chapter markers are not imported: each audio file appears as one chapter. Manage the library from your server administrator interface.
