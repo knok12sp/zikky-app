@@ -43,7 +43,12 @@ export function Rail({
 
   function pick(event: GestureResponderEvent) {
     if (!onChange || !width) return;
-    const x = event.nativeEvent.locationX;
+    // react-native-web forwards the DOM event, which carries offsetX instead of locationX.
+    const native = event.nativeEvent as typeof event.nativeEvent & {
+      offsetX?: number;
+    };
+    const x = Number.isFinite(native.locationX) ? native.locationX : native.offsetX;
+    if (x === undefined || !Number.isFinite(x)) return;
     onChange(Math.min(1, Math.max(0, x / width)) * max);
   }
 
