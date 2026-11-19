@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
 import { FlatList, Text, View } from "react-native";
-import { router } from "expo-router";
 import { Page, Action, Row, confirm, report, useTheme } from "../src/ui";
 import { useSession } from "../src/session";
 import { watchDownloads, downloadSong } from "../src/offline";
 import { usePlayback } from "../src/playback";
 import { Art } from "../src/components";
-import {
-  BackButton,
-  Banner,
-  Card,
-  EmptyState,
-  IconButton,
-  ProgressBar,
-} from "../src/kit";
+import { BackButton, Banner, EmptyState, ProgressBar } from "../src/kit";
 import { Icon } from "../src/icon";
-import { radius, spacing, type } from "../src/theme";
+import { spacing, type, font } from "../src/theme";
 
 const STATE_TEXT: Record<string, string> = {
   queued: "Waiting to download",
@@ -72,38 +64,23 @@ export default function Downloads() {
         </View>
       </View>
 
-      <Card inset padding={spacing.lg} style={{ gap: spacing.sm }}>
+      <View style={{ gap: spacing.sm }}>
         <View
           style={{
             flexDirection: "row",
-            alignItems: "center",
+            alignItems: "flex-end",
             gap: spacing.md,
+            borderTopWidth: 1,
+            borderBottomWidth: 1,
+            borderColor: colors.border,
+            paddingVertical: spacing.md,
           }}
         >
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Icon name="phone" size={20} color={colors.accent} />
-          </View>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, gap: 2 }}>
             <Text style={[type.count, { color: colors.text }]}>
               {complete.length} {complete.length === 1 ? "track" : "tracks"}
             </Text>
-            <Text
-              style={[
-                type.micro,
-                { color: colors.faint, textTransform: "uppercase" },
-              ]}
-            >
+            <Text style={[type.micro, { color: colors.muted }]}>
               {(bytes / 1048576).toFixed(1)} MB stored on this phone
             </Text>
           </View>
@@ -112,14 +89,14 @@ export default function Downloads() {
           These files live on your phone. Removing one never deletes the server
           copy, and your library is untouched.
         </Text>
-      </Card>
+      </View>
 
       <Text style={[type.meta, { color: colors.muted }]}>
         {session!.offline.wifiOnly
           ? "Downloads wait for Wi-Fi. Change this in Settings."
           : "Phone downloads can use cellular data."}
       </Text>
-      <Text style={[type.micro, { color: colors.faint }]}>
+      <Text style={[type.readout, { color: colors.faint }]}>
         {session!.offline.pauseOnBackground
           ? "Safe background recovery is on: active transfers pause when you leave and resume when you return."
           : "Native background sessions are allowed. Continuation after suspension or termination is not guaranteed."}{" "}
@@ -194,23 +171,24 @@ export default function Downloads() {
           const progress =
             item.total > 0 ? Math.min(1, item.bytes / item.total) : 0;
           return (
-            <Card
-              padding={spacing.md}
+            <View
               style={{
-                marginBottom: spacing.sm,
+                borderTopWidth: 1,
                 borderColor:
                   item.state === "failed" ? colors.danger : colors.border,
+                paddingVertical: spacing.md,
+                gap: spacing.sm,
               }}
             >
               <View style={{ flexDirection: "row", gap: spacing.md }}>
                 {song ? (
-                  <Art song={song} size={48} radius={9} />
+                  <Art song={song} size={44} radius={2} />
                 ) : (
                   <View
                     style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 9,
+                      width: 44,
+                      height: 44,
+                      borderRadius: 2,
                       backgroundColor: colors.surfaceInset,
                       alignItems: "center",
                       justifyContent: "center",
@@ -224,7 +202,7 @@ export default function Downloads() {
                     numberOfLines={1}
                     style={[
                       type.body,
-                      { color: colors.text, fontWeight: "600" },
+                      { color: colors.text, fontFamily: font.uiMedium },
                     ]}
                   >
                     {song?.title ?? "Track metadata unavailable"}
@@ -331,7 +309,7 @@ export default function Downloads() {
                   />
                 )}
               </Row>
-            </Card>
+            </View>
           );
         }}
       />

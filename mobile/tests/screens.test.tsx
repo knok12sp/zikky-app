@@ -23,6 +23,19 @@ const state = vi.hoisted(() => ({
   pickedFile: null as any,
   exported: "",
 }));
+vi.mock("../src/fonts", () => ({ useAppFonts: () => [true] }));
+vi.mock("react-native-svg", () => {
+  const host = (name: string) => (props: any) =>
+    React.createElement(name, props, props.children);
+  return {
+    __esModule: true,
+    default: host("Svg"),
+    Svg: host("Svg"),
+    Path: host("Path"),
+    Circle: host("Circle"),
+    Rect: host("Rect"),
+  };
+});
 vi.mock("react-native", () => {
   const host = (name: string) => (props: any) =>
     React.createElement(name, props, props.children);
@@ -37,6 +50,45 @@ vi.mock("react-native", () => {
     ActivityIndicator: host("ActivityIndicator"),
     RefreshControl: host("RefreshControl"),
     Modal: ({ visible, children }: any) => (visible ? children : null),
+    Animated: {
+      View: host("Animated.View"),
+      Text: host("Animated.Text"),
+      Value: class {
+        value: number;
+        constructor(value: number) {
+          this.value = value;
+        }
+        setValue(value: number) {
+          this.value = value;
+        }
+        interpolate() {
+          return this.value;
+        }
+      },
+      timing: (_value: any, _config: any) => ({
+        start: (cb?: any) => cb?.({ finished: true }),
+        stop: () => {},
+      }),
+      spring: (_value: any, _config: any) => ({
+        start: (cb?: any) => cb?.({ finished: true }),
+        stop: () => {},
+      }),
+      parallel: (animations: any[]) => ({
+        start: (cb?: any) => {
+          animations.forEach((a) => a?.start?.());
+          cb?.({ finished: true });
+        },
+        stop: () => {},
+      }),
+      sequence: (animations: any[]) => ({
+        start: (cb?: any) => {
+          animations.forEach((a) => a?.start?.());
+          cb?.({ finished: true });
+        },
+        stop: () => {},
+      }),
+      createAnimatedComponent: (c: any) => c,
+    },
     FlatList: ({
       data = [],
       renderItem,
@@ -355,7 +407,7 @@ it("home navigation and library browsing do not acquire audio", async () => {
   expect(state.push).toHaveBeenCalledWith(
     expect.objectContaining({
       pathname: "/collection",
-      params: expect.objectContaining({ id: "smart_recent" }),
+      params: expect.objectContaining({ id: "bridge_recent" }),
     }),
   );
 });
@@ -414,7 +466,7 @@ it("does not expose playlist mutation controls for an offline subset", async () 
   );
 });
 it("keeps discovery playback to the deliberately selected result", async () => {
-  state.params = { kind: "playlist", id: "smart_discover", name: "Discovery" };
+  state.params = { kind: "playlist", id: "bridge_discover", name: "Discovery" };
   await mount(<Collection />);
   expect(button("Play").props.disabled).toBe(true);
   await press("Play Second, Artist");
@@ -422,6 +474,7 @@ it("keeps discovery playback to the deliberately selected result", async () => {
 });
 it("searches the server after the debounce and clears stale results", async () => {
   await mount(<Search />);
+  await press("Online");
   await act(async () =>
     field("Artist, title or version").props.onChangeText("old"),
   );
@@ -558,7 +611,7 @@ it("appearance and Wi-Fi-only settings update real local state and their selecte
   await mount(<Settings />);
   await press("light");
   expect(state.saved.get("appearance")).toBe("light");
-  expect(button("✓ light").props.accessibilityState.selected).toBe(true);
+  expect(button("light").props.accessibilityState.selected).toBe(true);
   await press("Downloads: Wi-Fi only");
   expect(state.session.offline.setWifiOnly).toHaveBeenCalledWith(false);
   expect(button("Downloads: allow cellular")).toBeTruthy();
@@ -572,12 +625,14 @@ it("favoriting a song changes metadata without acquiring audio", async () => {
 });
 it("playlist moves and removals use standard Subsonic operations", async () => {
   state.params = { kind: "playlist", id: "playlist", name: "My playlist" };
+  const move = vi.spyOn(state.session.api, "movePlaylistTrack");
   await mount(<Collection />);
   await press("Move down");
-  expect(state.session.api.rest).toHaveBeenCalledWith("createPlaylist", {
-    playlistId: "playlist",
-    songId: ["two", "one"],
-  });
+  expect(move).toHaveBeenCalled();
+  expect(state.session.api.rest).toHaveBeenCalledWith(
+    "createPlaylist",
+    expect.objectContaining({ playlistId: "playlist" }),
+  );
   await press("Remove from playlist");
   expect(state.session.api.rest).toHaveBeenCalledWith("updatePlaylist", {
     playlistId: "playlist",

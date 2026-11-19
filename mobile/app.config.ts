@@ -43,7 +43,7 @@ const config: ExpoConfig = {
     blockedPermissions: ["android.permission.RECORD_AUDIO"],
     adaptiveIcon: {
       foregroundImage: "./assets/icon.png",
-      backgroundColor: "#101914",
+      backgroundColor: "#0C0B09",
     },
   },
   plugins: [
@@ -59,6 +59,7 @@ const config: ExpoConfig = {
     "expo-secure-store",
     "expo-sqlite",
     "expo-asset",
+    "expo-font",
     "expo-sharing",
     "./plugins/with-private-http.cjs",
     "./plugins/with-unsigned-release.cjs",

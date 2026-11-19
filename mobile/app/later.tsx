@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { Page, Label, Action, Field } from "../src/ui";
+import { Page, Label, Action, Field, Row } from "../src/ui";
 import { SongList } from "../src/components";
 import { useLater } from "../src/use-later";
 import { usePlayback } from "../src/playback";
 import { useSession } from "../src/session";
 import { removeLater } from "../src/listen-later";
 import { matchesSong } from "../src/library";
-import { Card, BackButton, SectionTitle } from "../src/kit";
+import { BackButton, SectionTitle } from "../src/kit";
 import { router } from "expo-router";
 export default function Later() {
   const all = useLater();
@@ -16,29 +16,27 @@ export default function Later() {
   const { session } = useSession();
   const songs = all.filter((song) => matchesSong(song, filter));
   return (
-    <Page
-      title="Listen later"
-      subtitle="Bookmarks, not downloads"
-      scroll={false}
-    >
+    <Page title="" scroll={false}>
       <SongList
         songs={songs}
         header={
           <>
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-            >
+            <Row>
               <BackButton onPress={() => router.back()} />
+              <View style={{ flex: 1 }}>
+                <Label variant="title">Listen later</Label>
+                <Label variant="meta" muted>
+                  Bookmarks, not downloads
+                </Label>
+              </View>
               <Label variant="micro" muted>
-                {all.length} SAVED
+                {all.length} saved
               </Label>
-            </View>
-            <Card inset>
-              <Label variant="meta" muted>
-                Saved here as a bookmark only. No audio is stored on this phone
-                when you add one.
-              </Label>
-            </Card>
+            </Row>
+            <Label variant="meta" muted>
+              Saved here as a bookmark only. No audio is stored on this phone
+              when you add one.
+            </Label>
             <Field
               label="Filter bookmarks"
               value={filter}
@@ -52,7 +50,7 @@ export default function Later() {
         emptyText={
           all.length
             ? "No bookmarks match this filter."
-            : "Search your library, then choose Save for later from a track's menu."
+            : "Find something in Online search, then choose Save for later from its menu."
         }
         onPlay={(index) => player.select([songs[index]!], 0)}
         extra={(song) => (
