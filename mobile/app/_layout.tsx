@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Stack, usePathname } from "expo-router";
 import { Platform, View, Text } from "react-native";
+import { useAppFonts } from "../src/fonts";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SessionProvider, useSession } from "../src/session";
 import { PlaybackProvider } from "../src/playback";
@@ -16,8 +17,8 @@ import {
 } from "../src/ui";
 import { MiniPlayer } from "../src/components";
 import { normalizeServers } from "../src/api";
-import { Card, Banner } from "../src/kit";
-import { type } from "../src/theme";
+import { Banner } from "../src/kit";
+import { radius, spacing, type } from "../src/theme";
 import { DesktopApp } from "../src/desktop/DesktopApp";
 import { DesktopSignIn } from "../src/desktop/DesktopSignIn";
 function Gate() {
@@ -29,7 +30,6 @@ function Gate() {
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  if (loading && Platform.OS === "web") return <DesktopSignIn />;
   if (loading)
     return (
       <Page title="Zikky">
@@ -45,29 +45,20 @@ function Gate() {
       >
         <View
           style={{
-            borderRadius: 22,
+            borderRadius: radius.sm,
             borderWidth: 1,
-            borderColor: colors.border,
+            borderColor: colors.borderStrong,
             backgroundColor: colors.surfaceInset,
-            padding: 22,
-            gap: 8,
-            overflow: "hidden",
+            padding: spacing.lg,
+            gap: spacing.xs,
           }}
         >
           <Text
-            style={[
-              type.numeric,
-              {
-                color: colors.display,
-                fontSize: 40,
-                letterSpacing: 8,
-                lineHeight: 48,
-              },
-            ]}
+            style={[type.hero, { color: colors.text, letterSpacing: 7 }]}
           >
             ZIKKY
           </Text>
-          <Text style={[type.micro, { color: colors.muted, letterSpacing: 2 }]}>
+          <Text style={[type.micro, { color: colors.faint }]}>
             PERSONAL MUSIC PLAYER
           </Text>
           <View
@@ -82,9 +73,8 @@ function Gate() {
             remote connection.
           </Text>
         </View>
-        <Card>
+        <View style={{ gap: spacing.md }}>
           <Label variant="heading">Connect</Label>
-          <View style={{ height: 12 }} />
           <Field
             label="Server addresses (up to four; first stays primary)"
             value={serversText}
@@ -106,7 +96,7 @@ function Gate() {
             onChange={setPassword}
             secret
           />
-          <View style={{ height: 16 }} />
+          <View style={{ height: spacing.xs }} />
           <Action
             title={busy ? "Testing connection…" : "Test connection and sign in"}
             variant="primary"
@@ -128,7 +118,7 @@ function Gate() {
                 .finally(() => setBusy(false));
             }}
           />
-        </Card>
+        </View>
         {!!(error || restoreError) && (
           <Banner
             tone="danger"
@@ -185,14 +175,16 @@ function Gate() {
   );
 }
 export default function Layout() {
+  const [fontsLoaded] = useAppFonts();
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return;
     const style = document.createElement("style");
     style.textContent =
-      '[role="button"]:focus-visible, a:focus-visible { outline: 2px solid #22A060; outline-offset: 2px; }';
+      '[role="button"]:focus-visible, a:focus-visible { outline: 1.5px solid var(--zikky-focus, #E9A13B); outline-offset: 2px; }';
     document.head.appendChild(style);
     return () => style.remove();
   }, []);
+  if (!fontsLoaded) return <View style={{ flex: 1 }} />;
   return (
     <SafeAreaProvider style={{ flex: 1, width: "100%" }}>
       <ThemeProvider>

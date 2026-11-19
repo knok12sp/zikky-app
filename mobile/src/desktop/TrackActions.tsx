@@ -105,7 +105,7 @@ export function TrackActions({ song }: { song: Song }) {
         <View
           style={{
             flex: 1,
-            backgroundColor: "rgba(0,0,0,0.65)",
+            backgroundColor: "rgba(0,0,0,0.78)",
             alignItems: "center",
             justifyContent: "center",
             padding: spacing.lg,
@@ -113,24 +113,42 @@ export function TrackActions({ song }: { song: Song }) {
         >
           <ScrollView
             style={{
+              flexGrow: 0,
               maxHeight: "90%",
               width: "100%",
               maxWidth: 520,
-              backgroundColor: colors.surface,
-              borderRadius: radius.lg,
+              backgroundColor: colors.panel,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              borderRadius: radius.sm,
             }}
             contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}
           >
-            <Text
-              accessibilityRole="header"
-              style={[type.heading, { color: colors.text }]}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.md,
+                paddingBottom: spacing.md,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}
             >
-              {song.title}
-            </Text>
-            <Action
-              title="Close track options"
-              onPress={() => setOpen(false)}
-            />
+              <Text
+                accessibilityRole="header"
+                numberOfLines={1}
+                style={[type.title, { flex: 1, color: colors.text }]}
+              >
+                {song.title}
+              </Text>
+              <IconButton
+                name="close"
+                label="Close track options"
+                onPress={() => setOpen(false)}
+                size={32}
+                iconSize={16}
+              />
+            </View>
             <Action
               title="Play next"
               onPress={() => {
@@ -146,7 +164,7 @@ export function TrackActions({ song }: { song: Song }) {
               }}
             />
             <GenreEditor key={song.id} song={song} />
-            <Text style={[type.heading, { color: colors.text }]}>
+            <Text style={[type.micro, { color: colors.muted, marginTop: spacing.sm }]}>
               Add to playlist
             </Text>
             {playlists.isPending && (

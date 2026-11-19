@@ -12,11 +12,12 @@ import {
   report,
   confirm,
 } from "../src/ui";
-import { Card, SectionTitle, Chip, Banner, BackButton } from "../src/kit";
+import { SectionTitle, Chip, Banner, BackButton } from "../src/kit";
 import { useSession, queryClient } from "../src/session";
 import { usePlayback } from "../src/playback";
 import { db, clearCachedMetadata } from "../src/db";
 import { watchDownloads } from "../src/offline";
+import { spacing } from "../src/theme";
 export default function Settings() {
   const { session, logout, updateAddresses } = useSession();
   const player = usePlayback();
@@ -50,24 +51,24 @@ export default function Settings() {
         </View>
       </Row>
       <SectionTitle title="Connection" />
-      <Card>
-        <View style={{ gap: 4 }}>
-          <Label variant="meta" muted>
+      <View style={{ gap: spacing.md }}>
+        <View style={{ gap: 2 }}>
+          <Label muted variant="micro">
             Active address
           </Label>
           <Label variant="meta">{session!.api.activeServer}</Label>
-          <Label variant="meta" muted>
-            {session!.api.addresses.join("  ·  ")}
-          </Label>
+          {session!.api.addresses.length > 1 && (
+            <Label muted variant="micro">
+              {session!.api.addresses.join("  ·  ")}
+            </Label>
+          )}
         </View>
-        <View style={{ height: 16 }} />
         <Field
           label="Alternate server addresses (one per line)"
           value={alternates}
           onChange={setAlternates}
           multiline
         />
-        <View style={{ height: 12 }} />
         <Action
           title={connecting ? "Testing addresses…" : "Test and save addresses"}
           variant="primary"
@@ -86,7 +87,6 @@ export default function Settings() {
             }
           }}
         />
-        <View style={{ height: 8 }} />
         <Action
           title="Test current connection"
           variant="ghost"
@@ -101,7 +101,7 @@ export default function Settings() {
               .catch(report)
           }
         />
-      </Card>
+      </View>
       <Label muted variant="meta">
         If the active address stops responding, requests try the next one
         automatically. The first address stays fixed so phone downloads remain
@@ -114,7 +114,7 @@ export default function Settings() {
         {["system", "dark", "light"].map((m) => (
           <Chip
             key={m}
-            title={m === mode ? "✓ " + m : m}
+            title={m}
             active={m === mode}
             onPress={() => setMode(m)}
           />
@@ -122,25 +122,25 @@ export default function Settings() {
       </Row>
 
       <SectionTitle title="Downloads & storage" />
-      <Card padding={0}>
-        <View style={{ padding: 16, gap: 10 }}>
-          <Row>
-            <Chip
-              title={
-                wifi ? "Downloads: Wi-Fi only" : "Downloads: allow cellular"
-              }
-              icon="wifi"
-              active={wifi}
-              onPress={() => {
-                session!.offline.setWifiOnly(!wifi);
-                setWifi(!wifi);
-              }}
-            />
-          </Row>
+      <View style={{ gap: spacing.md }}>
+        <View style={{ gap: spacing.sm }}>
+          <Chip
+            title={
+              wifi ? "Downloads: Wi-Fi only" : "Downloads: allow cellular"
+            }
+            icon="wifi"
+            active={wifi}
+            onPress={() => {
+              session!.offline.setWifiOnly(!wifi);
+              setWifi(!wifi);
+            }}
+          />
           <Label muted variant="meta">
             Wi-Fi only gates the next phone download. Streaming uses the active
             connection.
           </Label>
+        </View>
+        <View style={{ gap: spacing.sm }}>
           <Chip
             title={
               safeBackground
@@ -159,23 +159,27 @@ export default function Settings() {
             continuation is not guaranteed on every device.
           </Label>
         </View>
-        <View style={{ height: 1, backgroundColor: colors.border }} />
+      </View>
+      <View>
         <Action
           title="Manage phone downloads"
           variant="row"
           icon="phone"
+          style={{ borderTopWidth: 1, borderColor: colors.border }}
           onPress={() => router.push("/downloads")}
         />
         <Action
           title="Backup & recovery"
           variant="row"
           icon="downloaded"
+          style={{ borderTopWidth: 1, borderColor: colors.border }}
           onPress={() => router.push("/backup")}
         />
         <Action
           title="Clear temporary cache"
           variant="row"
           icon="trash"
+          style={{ borderTopWidth: 1, borderColor: colors.border }}
           onPress={() =>
             void (async () => {
               if (FS.cacheDirectory) {
@@ -193,6 +197,7 @@ export default function Settings() {
           title="Remove cached metadata and search history"
           variant="row"
           icon="trash"
+          style={{ borderTopWidth: 1, borderColor: colors.border }}
           onPress={() =>
             confirm(
               "Clear local metadata?",
@@ -209,29 +214,29 @@ export default function Settings() {
             )
           }
         />
-      </Card>
+      </View>
 
       <SectionTitle title="Playback" />
-      <Card>
+      <View style={{ gap: spacing.md }}>
         <Label muted variant="meta">
           Background audio is enabled. Disconnecting headphones pauses playback
           through the native engine. Shuffle, repeat and the sleep timer live in
           Now playing.
         </Label>
-        <View style={{ height: 12 }} />
         <Action
           title="Open playback settings"
           variant="secondary"
           icon="play"
           onPress={() => router.push("/player")}
         />
-      </Card>
+      </View>
 
       <SectionTitle title="Account" />
-      <Card padding={0}>
+      <View>
         <Action
           title="Sign out, keep phone downloads"
           variant="row"
+          style={{ borderTopWidth: 1, borderColor: colors.border }}
           onPress={() =>
             confirm(
               "Sign out?",
@@ -247,6 +252,7 @@ export default function Settings() {
           title="Remove all account data from this phone"
           variant="row"
           danger
+          style={{ borderTopWidth: 1, borderColor: colors.border }}
           onPress={() =>
             confirm(
               "Remove account data?",
@@ -266,7 +272,7 @@ export default function Settings() {
             )
           }
         />
-      </Card>
+      </View>
       <Label muted variant="micro">
         Removing anything from this phone never deletes music from your server.
         Favourites, playlists and your library stay on the server.

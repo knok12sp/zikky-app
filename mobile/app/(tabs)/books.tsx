@@ -5,7 +5,7 @@ import { Page, Busy, Label, useTheme } from "../../src/ui";
 import { useSession } from "../../src/session";
 import { useBookPlayback } from "../../src/book-playback";
 import { IconButton } from "../../src/kit";
-import { radius, spacing, type } from "../../src/theme";
+import { radius, spacing, type, font } from "../../src/theme";
 
 export default function Books() {
   const { session } = useSession();
@@ -31,7 +31,7 @@ export default function Books() {
             gap: spacing.md,
             padding: spacing.md,
             marginBottom: spacing.lg,
-            borderRadius: radius.lg,
+            borderRadius: radius.sm,
             backgroundColor: colors.surface,
             borderWidth: 1,
             borderColor: colors.border,
@@ -41,7 +41,7 @@ export default function Books() {
             <Label>Now playing</Label>
             <Text
               numberOfLines={1}
-              style={[type.body, { color: colors.text, fontWeight: "700" }]}
+              style={[type.body, { color: colors.text, fontFamily: font.uiMedium }]}
             >
               {current.book.title}
             </Text>
@@ -92,7 +92,7 @@ export default function Books() {
               padding: spacing.md,
               marginBottom: spacing.sm,
               alignItems: "center",
-              borderRadius: radius.lg,
+              borderRadius: radius.sm,
               backgroundColor: colors.surface,
             }}
           >
@@ -125,7 +125,7 @@ export default function Books() {
             <View style={{ flex: 1, gap: 2 }}>
               <Text
                 numberOfLines={1}
-                style={[type.body, { color: colors.text, fontWeight: "700" }]}
+                style={[type.body, { color: colors.text, fontFamily: font.uiMedium }]}
               >
                 {book.title}
               </Text>

@@ -20,10 +20,10 @@ import { usePlayback } from "./playback";
 import { watchDownloads } from "./offline";
 import { useLater } from "./use-later";
 import { saveLater, removeLater } from "./listen-later";
-import { Label, Action, useTheme, report, Page, Field, Busy } from "./ui";
+import { Label, Action, useTheme, report, Field, Busy } from "./ui";
 import { Icon, IconName } from "./icon";
-import { IconButton, PlayButton, ProgressBar } from "./kit";
-import { radius, spacing, type } from "./theme";
+import { IconButton } from "./kit";
+import { radius, font, spacing, type } from "./theme";
 export const duration = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
@@ -41,7 +41,7 @@ export function Art({
   /** Requested server artwork width. Lists use 480; Now Playing uses 1200. */
   artworkSize?: number;
   fill?: boolean;
-  /** Softens a full-bleed backdrop without touching sharp covers. */
+  /** Softens a full-bleed backdrop without touching list or cover art. */
   blurRadius?: number;
 }) {
   const { session } = useSession();
@@ -93,8 +93,8 @@ export function Art({
           accessibilityLabel={`Artwork for ${song.album ?? song.title}`}
           source={candidates[index]}
           resizeMode="cover"
-          onError={() => setFailed({ key, index: index + 1 })}
           blurRadius={blurRadius}
+          onError={() => setFailed({ key, index: index + 1 })}
           style={{
             position: "absolute",
             width: "100%",
@@ -146,40 +146,34 @@ function SheetRow({
         alignItems: "center",
         gap: 14,
         paddingVertical: 10,
-        paddingHorizontal: 4,
-        borderRadius: radius.md,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
         opacity: disabled ? 0.4 : pressed ? 0.55 : 1,
       })}
     >
-      <View
-        style={{
-          width: 34,
-          height: 34,
-          borderRadius: 10,
-          backgroundColor: colors.surfaceInset,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      <View style={{ width: 20, alignItems: "center" }}>
         {icon && (
           <Icon
             name={icon}
-            size={17}
+            size={16}
             color={danger ? colors.danger : colors.muted}
           />
         )}
       </View>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           style={[
-            type.body,
-            { color: danger ? colors.danger : colors.text, fontWeight: "600" },
+            type.meta,
+            {
+              color: danger ? colors.danger : colors.text,
+              fontFamily: font.uiMedium,
+            },
           ]}
         >
           {title}
         </Text>
         {!!subtitle && (
-          <Text style={[type.meta, { color: colors.faint }]}>{subtitle}</Text>
+          <Text style={[type.micro, { color: colors.faint }]}>{subtitle}</Text>
         )}
       </View>
       {trailing}
@@ -256,10 +250,7 @@ export function SongList({
   }
   async function rate(s: Song, value: number) {
     const rating = s.rating === value ? 0 : value;
-    await session!.api.rest("setRating", {
-      id: s.id,
-      rating: String(rating),
-    });
+    await session!.api.rest("setRating", { id: s.id, rating: String(rating) });
     await queryClient.invalidateQueries({ queryKey: [session!.scope] });
     setSelected((current) =>
       current?.id === s.id ? { ...current, rating } : current,
@@ -275,14 +266,7 @@ export function SongList({
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 24 }}
         ItemSeparatorComponent={() => (
-          <View
-            style={{
-              height: 1,
-              backgroundColor: colors.border,
-              marginLeft: 64,
-              opacity: 0.7,
-            }}
-          />
+          <View style={{ height: 1, backgroundColor: colors.border }} />
         )}
         ListHeaderComponent={
           header ? (
@@ -315,19 +299,18 @@ export function SongList({
               <View
                 style={{
                   flexDirection: "row",
-                  gap: 12,
+                  gap: spacing.md,
                   alignItems: "center",
-                  paddingVertical: 9,
-                  paddingHorizontal: 4,
-                  borderRadius: radius.md,
+                  paddingVertical: 6,
                 }}
               >
-                <Art song={item} size={52} />
+                <Art song={item} size={44} radius={2} />
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Play ${item.title}, ${item.artist}`}
                   style={{
                     flex: 1,
+                    minWidth: 0,
                     minHeight: 52,
                     justifyContent: "center",
                     gap: 1,
@@ -339,10 +322,10 @@ export function SongList({
                   <Text
                     numberOfLines={1}
                     style={[
-                      type.body,
+                      type.meta,
                       {
                         color: now ? colors.accent : colors.text,
-                        fontWeight: "600",
+                        fontFamily: font.uiMedium,
                       },
                     ]}
                   >
@@ -350,7 +333,7 @@ export function SongList({
                   </Text>
                   <Text
                     numberOfLines={1}
-                    style={[type.meta, { color: colors.muted }]}
+                    style={[type.micro, { color: colors.faint }]}
                   >
                     {item.artist} · {duration(item.duration)}
                   </Text>
@@ -402,7 +385,12 @@ export function SongList({
                           size={10}
                           color={colors.accent}
                         />
-                        <Text style={[type.micro, { color: colors.faint }]}>
+                        <Text
+                          style={[
+                            type.micro,
+                            { color: colors.accent, textTransform: "none" },
+                          ]}
+                        >
                           {item.rating}
                         </Text>
                       </>
@@ -451,11 +439,11 @@ export function SongList({
           />
           <View
             style={{
-              backgroundColor: colors.surface,
-              borderTopLeftRadius: 26,
-              borderTopRightRadius: 26,
+              backgroundColor: colors.panel,
+              borderTopLeftRadius: radius.sm,
+              borderTopRightRadius: radius.sm,
               borderWidth: 1,
-              borderColor: colors.border,
+              borderColor: colors.borderStrong,
               paddingHorizontal: spacing.xl,
               paddingTop: spacing.sm,
               paddingBottom: Math.max(insets.bottom, spacing.xl),
@@ -465,9 +453,8 @@ export function SongList({
             <View
               style={{
                 alignSelf: "center",
-                width: 38,
-                height: 4,
-                borderRadius: 4,
+                width: 32,
+                height: 2,
                 backgroundColor: colors.borderStrong,
                 marginBottom: spacing.md,
               }}
@@ -536,27 +523,29 @@ export function SongList({
                   />
                   <SheetHeading>Track</SheetHeading>
                   <GenreEditor key={selected.id} song={selected} />
-                  <SheetRow
-                    title={
-                      selected.starred ? "Remove favorite" : "Add favorite"
-                    }
-                    icon={selected.starred ? "heartFilled" : "heart"}
-                    disabled={working}
-                    onPress={() => run(() => favorite(selected))}
-                  />
                   <View
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      minHeight: 44,
-                      paddingLeft: 4,
+                      paddingHorizontal: 4,
+                      minHeight: 50,
                     }}
                   >
-                    <Text style={[type.meta, { color: colors.muted }]}>
+                    <Text
+                      style={[
+                        type.meta,
+                        { color: colors.text, fontFamily: font.uiMedium },
+                      ]}
+                    >
                       Rating
                     </Text>
-                    <View style={{ flexDirection: "row" }}>
+                    <View
+                      style={{
+                        flex: 1,
+                        flexDirection: "row",
+                        justifyContent: "flex-end",
+                      }}
+                    >
                       {[1, 2, 3, 4, 5].map((value) => (
                         <Pressable
                           key={value}
@@ -567,17 +556,18 @@ export function SongList({
                               : `Rate ${value} star${value === 1 ? "" : "s"}`
                           }
                           accessibilityState={{
-                            selected: (selected.rating ?? 0) >= value,
+                            selected: selected.rating === value,
                             disabled: working,
                           }}
                           disabled={working}
                           onPress={() => run(() => rate(selected, value))}
-                          style={{
+                          style={({ pressed }) => ({
                             width: 44,
                             height: 44,
                             alignItems: "center",
                             justifyContent: "center",
-                          }}
+                            opacity: working ? 0.4 : pressed ? 0.55 : 1,
+                          })}
                         >
                           <Icon
                             name={
@@ -585,7 +575,7 @@ export function SongList({
                                 ? "starFilled"
                                 : "star"
                             }
-                            size={20}
+                            size={22}
                             color={
                               (selected.rating ?? 0) >= value
                                 ? colors.accent
@@ -596,6 +586,14 @@ export function SongList({
                       ))}
                     </View>
                   </View>
+                  <SheetRow
+                    title={
+                      selected.starred ? "Remove favorite" : "Add favorite"
+                    }
+                    icon={selected.starred ? "heartFilled" : "heart"}
+                    disabled={working}
+                    onPress={() => run(() => favorite(selected))}
+                  />
                   <SheetRow
                     title={
                       later.some((song) => song.id === selected.id)
@@ -744,50 +742,59 @@ export function MiniPlayer({ bottomInset = true }: { bottomInset?: boolean }) {
         )}
       </View>
     ) : null;
-  const progress = song.duration ? player.queue.position / song.duration : 0;
+  const progress = song.duration
+    ? Math.min(1, player.queue.position / song.duration)
+    : 0;
   return (
     <View
       style={{
-        backgroundColor: colors.surface,
-        borderTopWidth: 1,
-        borderColor: colors.border,
-        paddingBottom: bottomInset ? Math.max(8, insets.bottom - 4) : 8,
+        backgroundColor: colors.panel,
+        paddingBottom: bottomInset ? insets.bottom : 0,
       }}
     >
-      <View style={{ paddingHorizontal: spacing.md }}>
-        <ProgressBar value={progress} height={2} />
+      <View style={{ height: 1, backgroundColor: colors.border }}>
+        <View
+          style={{
+            height: 1,
+            width: `${progress * 100}%`,
+            backgroundColor: colors.accent,
+          }}
+        />
       </View>
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
-          gap: spacing.sm,
+          gap: spacing.xs,
           paddingHorizontal: spacing.md,
-          paddingTop: 8,
+          minHeight: 56,
         }}
       >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Open now playing"
-          style={{
+          style={({ pressed }) => ({
             flex: 1,
+            minWidth: 0,
             flexDirection: "row",
             alignItems: "center",
-            gap: 12,
-          }}
+            gap: spacing.md,
+            paddingVertical: 8,
+            opacity: pressed ? 0.6 : 1,
+          })}
           onPress={() => router.push("/player")}
         >
-          <Art song={song} size={42} radius={9} />
-          <View style={{ flex: 1 }}>
+          <Art song={song} size={38} radius={2} />
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
             <Text
               numberOfLines={1}
-              style={[type.body, { color: colors.text, fontWeight: "600" }]}
+              style={[type.meta, { color: colors.text, fontFamily: font.uiMedium }]}
             >
               {song.title}
             </Text>
             <Text
               numberOfLines={1}
-              style={[type.meta, { color: colors.muted }]}
+              style={[type.micro, { color: colors.faint }]}
             >
               {song.artist}
             </Text>
@@ -797,19 +804,19 @@ export function MiniPlayer({ bottomInset = true }: { bottomInset?: boolean }) {
           name={player.status.playing ? "pause" : "play"}
           label={player.status.playing ? "Pause" : "Play"}
           onPress={player.toggle}
-          size={40}
-          iconSize={20}
-          active
+          size={36}
+          iconSize={16}
+          variant="filled"
         />
         <IconButton
           name="next"
           label="Next"
           onPress={player.next}
-          size={40}
-          iconSize={18}
+          size={36}
+          iconSize={16}
         />
       </View>
-      {(player.busy || player.error) && (
+      {!!(player.busy || player.error) && (
         <View
           style={{
             flexDirection: "row",

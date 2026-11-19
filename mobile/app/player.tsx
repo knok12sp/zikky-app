@@ -13,7 +13,6 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
-import { LinearGradient } from "expo-linear-gradient";
 import { usePlayback } from "../src/playback";
 import { Art } from "../src/components";
 import { useTheme, report } from "../src/ui";
@@ -27,7 +26,7 @@ import {
   SectionTitle,
   EmptyState,
 } from "../src/kit";
-import { light, radius, spacing, type } from "../src/theme";
+import { font, radius, spacing, type } from "../src/theme";
 
 const clock = (s: number) =>
   `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
@@ -62,45 +61,58 @@ function MenuRow({
         }
       }}
       style={({ pressed }) => ({
-        minHeight: 54,
+        minHeight: 52,
         flexDirection: "row",
         alignItems: "center",
         gap: spacing.md,
         paddingVertical: spacing.sm,
-        paddingHorizontal: spacing.xs,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
         opacity: disabled ? 0.4 : pressed ? 0.55 : 1,
       })}
     >
-      <View
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 12,
-          backgroundColor: colors.surfaceInset,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      <View style={{ width: 20, alignItems: "center" }}>
         <Icon
           name={icon}
-          size={17}
+          size={16}
           color={danger ? colors.danger : colors.muted}
         />
       </View>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           style={[
-            type.body,
-            { color: danger ? colors.danger : colors.text, fontWeight: "600" },
+            type.meta,
+            {
+              color: danger ? colors.danger : colors.text,
+              fontFamily: font.uiMedium,
+            },
           ]}
         >
           {title}
         </Text>
         {!!subtitle && (
-          <Text style={[type.meta, { color: colors.faint }]}>{subtitle}</Text>
+          <Text style={[type.micro, { color: colors.faint }]}>{subtitle}</Text>
         )}
       </View>
     </Pressable>
+  );
+}
+
+function Meta({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
+  return (
+    <Text
+      style={[
+        type.micro,
+        {
+          color: colors.faint,
+          marginTop: spacing.lg,
+          marginBottom: spacing.xs,
+        },
+      ]}
+    >
+      {children}
+    </Text>
   );
 }
 
@@ -109,7 +121,7 @@ export default function Player() {
   const { colors } = useTheme();
   const { session } = useSession();
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [menu, setMenu] = useState(false);
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [, tick] = useState(0);
@@ -126,16 +138,11 @@ export default function Player() {
   }, [session, song, tick]);
   const saving = !!download && !onPhone && download.state !== "failed";
   const downloadFailed = download?.state === "failed";
-  const starred = song
-    ? (favorites[song.id] ?? !!song.starred)
-    : false;
-  const isLight = colors.bg === light.bg;
+  const starred = song ? (favorites[song.id] ?? !!song.starred) : false;
   const compact = height < 730;
-  const duration = Math.max(
-    0,
-    p.status.duration || song?.duration || 0,
-  );
+  const duration = Math.max(0, p.status.duration || song?.duration || 0);
   const current = Math.min(Math.max(0, p.status.currentTime), duration);
+  const plate = Math.min(width - spacing.xl * 2, compact ? 260 : 320);
 
   async function favorite() {
     if (!song) return;
@@ -157,58 +164,12 @@ export default function Player() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {song && (
-        <View style={{ ...StyleSheetAbsolute, overflow: "hidden" }}>
-          <Art song={song} fill artworkSize={1200} />
-        </View>
-      )}
-      <LinearGradient
-        pointerEvents="none"
-        colors={
-          isLight
-            ? ["rgba(242,245,238,0.62)", "rgba(242,245,238,0)"]
-            : ["rgba(10,14,11,0.72)", "rgba(10,14,11,0)"]
-        }
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 190,
-        }}
-      />
-      <LinearGradient
-        pointerEvents="none"
-        colors={
-          isLight
-            ? [
-                "rgba(242,245,238,0)",
-                "rgba(242,245,238,0.42)",
-                "rgba(242,245,238,0.86)",
-                "rgba(242,245,238,0.99)",
-                "#F2F5EE",
-              ]
-            : [
-                "rgba(10,14,11,0)",
-                "rgba(10,14,11,0.34)",
-                "rgba(10,14,11,0.78)",
-                "rgba(10,14,11,0.97)",
-                "#0A0E0B",
-              ]
-        }
-        locations={[0, 0.3, 0.58, 0.8, 1]}
-        style={StyleSheetAbsolute}
-      />
-
       <SafeAreaView
         edges={["top", "bottom", "left", "right"]}
         style={{ flex: 1 }}
       >
         <View
           style={{
-            width: "100%",
-            maxWidth: 760,
-            alignSelf: "center",
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
@@ -220,29 +181,19 @@ export default function Player() {
             name="chevronDown"
             label="Close player"
             onPress={() => router.back()}
-            size={44}
-            iconSize={24}
+            size={40}
+            iconSize={20}
           />
-          <Text
-            style={[
-              type.micro,
-              {
-                color: isLight ? colors.muted : "rgba(237,242,233,0.72)",
-                textTransform: "uppercase",
-                letterSpacing: 2.2,
-              },
-            ]}
-          >
-            Now playing
+          <Text style={[type.micro, { color: colors.faint }]}>
+            NOW PLAYING · ON SERVER
           </Text>
           <IconButton
             name="more"
             label="More player options"
             onPress={() => setMenu(true)}
             disabled={!song}
-            size={44}
-            iconSize={22}
-            color={isLight ? colors.text : "#EDF2E9"}
+            size={40}
+            iconSize={18}
           />
         </View>
 
@@ -250,8 +201,8 @@ export default function Player() {
           <ScrollView
             contentContainerStyle={{
               flexGrow: 1,
-              justifyContent: "flex-end",
-              paddingHorizontal: spacing.xxl,
+              paddingHorizontal: spacing.xl,
+              paddingTop: spacing.md,
               paddingBottom: Math.max(insets.bottom, spacing.lg),
             }}
             showsVerticalScrollIndicator={false}
@@ -259,10 +210,11 @@ export default function Player() {
             <View
               style={{
                 width: "100%",
-                maxWidth: 600,
+                maxWidth: 460,
                 alignSelf: "center",
-                gap: compact ? 13 : 18,
-                paddingTop: compact ? 20 : 44,
+                gap: spacing.lg,
+                flexGrow: 1,
+                justifyContent: "center",
               }}
             >
               {!!(p.busy || p.error) && (
@@ -271,13 +223,15 @@ export default function Player() {
                     backgroundColor: p.error
                       ? colors.dangerSoft
                       : colors.accentSoft,
-                    borderRadius: radius.md,
+                    borderRadius: radius.sm,
+                    borderWidth: 1,
+                    borderColor: p.error ? colors.danger : colors.border,
                     padding: spacing.sm,
                   }}
                 >
                   <Text
                     style={[
-                      type.meta,
+                      type.micro,
                       {
                         color: p.error ? colors.danger : colors.accent,
                         textAlign: "center",
@@ -291,23 +245,59 @@ export default function Player() {
 
               <View
                 style={{
+                  width: plate,
+                  height: plate,
+                  alignSelf: "center",
+                  borderRadius: radius.sm,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  backgroundColor: colors.surfaceInset,
+                  overflow: "hidden",
+                }}
+              >
+                <Art song={song} fill artworkSize={1200} />
+              </View>
+
+              <View
+                style={{
                   flexDirection: "row",
-                  alignItems: "flex-start",
+                  alignItems: "flex-end",
                   gap: spacing.md,
                 }}
               >
-                <View style={{ flex: 1, gap: 3 }}>
+                <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 5,
+                        height: 5,
+                        backgroundColor: p.status.playing
+                          ? colors.accent
+                          : colors.faint,
+                      }}
+                    />
+                    <Text
+                      style={[
+                        type.micro,
+                        {
+                          color: p.status.playing
+                            ? colors.accent
+                            : colors.faint,
+                        },
+                      ]}
+                    >
+                      {p.status.playing ? "PLAYING" : "PAUSED"}
+                    </Text>
+                  </View>
                   <Text
                     numberOfLines={2}
-                    style={[
-                      type.title,
-                      {
-                        color: colors.text,
-                        fontSize: compact ? 25 : 30,
-                        lineHeight: compact ? 30 : 35,
-                        letterSpacing: -0.8,
-                      },
-                    ]}
+                    style={[type.title, { color: colors.text }]}
                   >
                     {song.title}
                   </Text>
@@ -315,67 +305,57 @@ export default function Player() {
                     numberOfLines={1}
                     style={[
                       type.body,
-                      {
-                        color: colors.text,
-                        fontWeight: "600",
-                        fontSize: compact ? 15 : 16,
-                      },
+                      { color: colors.muted, fontFamily: font.ui },
                     ]}
                   >
                     {song.artist}
+                    {song.album ? ` · ${song.album}` : ""}
                   </Text>
-                  {!!song.album && (
-                    <Text
-                      numberOfLines={1}
-                      style={[type.meta, { color: colors.muted }]}
-                    >
-                      {song.album}
-                    </Text>
-                  )}
                 </View>
                 <IconButton
                   name={starred ? "heartFilled" : "heart"}
                   label={starred ? "Remove favorite" : "Add favorite"}
                   active={starred}
                   onPress={favorite}
-                  size={46}
-                  iconSize={22}
-                  variant={starred ? "plain" : "outline"}
+                  size={40}
+                  iconSize={18}
                 />
               </View>
 
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 7,
-                }}
-              >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
                 <Icon
                   name={onPhone ? "downloaded" : saving ? "download" : "server"}
-                  size={12}
+                  size={11}
                   color={onPhone ? colors.accent : colors.faint}
                 />
                 <Text
                   style={[
                     type.micro,
-                    {
-                      color: onPhone ? colors.accent : colors.faint,
-                      textTransform: "uppercase",
-                    },
+                    { color: onPhone ? colors.accent : colors.faint },
                   ]}
                 >
                   {onPhone
-                    ? "Offline on this phone"
+                    ? "OFFLINE ON THIS PHONE"
                     : saving
-                      ? "Saving to this phone"
+                      ? "SAVING TO THIS PHONE"
                       : downloadFailed
-                        ? "Phone download failed"
-                        : "Streaming from your server"}
+                        ? "PHONE DOWNLOAD FAILED"
+                        : "STREAMING FROM YOUR SERVER"}
                 </Text>
               </View>
 
-              <View style={{ gap: 2 }}>
+              <View
+                style={{
+                  backgroundColor: colors.surfaceInset,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: radius.sm,
+                  paddingHorizontal: spacing.md,
+                  paddingTop: spacing.xs,
+                  paddingBottom: spacing.sm,
+                  gap: 2,
+                }}
+              >
                 <Slider
                   accessibilityLabel="Playback position"
                   accessibilityValue={{
@@ -387,11 +367,11 @@ export default function Player() {
                   maximumValue={Math.max(1, duration)}
                   value={current}
                   minimumTrackTintColor={colors.accent}
-                  maximumTrackTintColor={isLight ? colors.borderStrong : "#465248"}
+                  maximumTrackTintColor={colors.borderStrong}
                   thumbTintColor={colors.accent}
                   disabled={!p.status.isLoaded || duration <= 0}
                   onSlidingComplete={(value) => void p.seek(value)}
-                  style={{ width: "100%", height: 34 }}
+                  style={{ width: "100%", height: 32 }}
                 />
                 <View
                   style={{
@@ -399,10 +379,10 @@ export default function Player() {
                     justifyContent: "space-between",
                   }}
                 >
-                  <Text style={[type.numeric, { color: colors.text }]}>
+                  <Text style={[type.readout, { color: colors.accent }]}>
                     {clock(current)}
                   </Text>
-                  <Text style={[type.numeric, { color: colors.muted }]}>
+                  <Text style={[type.readout, { color: colors.muted }]}>
                     −{clock(duration - current)}
                   </Text>
                 </View>
@@ -413,7 +393,6 @@ export default function Player() {
                   flexDirection: "row",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  paddingHorizontal: spacing.xs,
                 }}
               >
                 <IconButton
@@ -421,43 +400,39 @@ export default function Player() {
                   label={p.queue.shuffle ? "Shuffle on" : "Shuffle off"}
                   active={p.queue.shuffle}
                   onPress={() => p.shuffle()}
-                  size={46}
-                  iconSize={22}
+                  size={40}
+                  iconSize={18}
                 />
                 <IconButton
                   name="previous"
                   label="Previous"
                   onPress={p.previous}
-                  size={52}
-                  iconSize={23}
-                  variant="outline"
+                  size={44}
+                  iconSize={20}
                 />
                 <PlayButton
                   playing={p.status.playing}
                   busy={!!p.busy}
                   onPress={p.toggle}
-                  size={compact ? 66 : 76}
+                  size={compact ? 58 : 64}
                 />
                 <IconButton
                   name="next"
                   label="Next"
                   onPress={p.next}
-                  size={52}
-                  iconSize={23}
-                  variant="outline"
+                  size={44}
+                  iconSize={20}
                 />
                 <IconButton
                   name={p.queue.repeat === "single" ? "repeatOne" : "repeat"}
                   label={
                     "Repeat " +
-                    { none: "off", all: "all", single: "one" }[
-                      p.queue.repeat
-                    ]
+                    { none: "off", all: "all", single: "one" }[p.queue.repeat]
                   }
                   active={p.queue.repeat !== "none"}
                   onPress={p.repeat}
-                  size={46}
-                  iconSize={22}
+                  size={40}
+                  iconSize={18}
                 />
               </View>
 
@@ -465,65 +440,73 @@ export default function Player() {
                 style={{
                   flexDirection: "row",
                   justifyContent: "space-around",
-                  paddingTop: 2,
+                  borderTopWidth: 1,
+                  borderColor: colors.border,
+                  paddingTop: spacing.md,
                 }}
               >
-                <View style={{ alignItems: "center", gap: 4 }}>
-                  <IconButton
-                    name={
-                      onPhone ? "downloaded" : saving ? "download" : "download"
-                    }
-                    label={
-                      onPhone
-                        ? "Downloaded to this phone"
-                        : saving
-                          ? "Saving to this phone"
-                          : "Download to this phone"
-                    }
-                    disabled={onPhone || saving}
-                    active={onPhone || saving}
-                    onPress={saveToPhone}
-                    size={46}
-                  />
-                  <Text style={[type.micro, { color: colors.faint }]}>
-                    {onPhone ? "SAVED" : saving ? "SAVING" : "PHONE"}
-                  </Text>
-                </View>
-                <View style={{ alignItems: "center", gap: 4 }}>
-                  <IconButton
-                    name="clock"
-                    label="Sleep timer"
-                    active={!!p.sleep || p.sleepAfterTrack}
-                    onPress={() => setMenu(true)}
-                    size={46}
-                  />
-                  <Text style={[type.micro, { color: colors.faint }]}>
-                    SLEEP
-                  </Text>
-                </View>
-                <View style={{ alignItems: "center", gap: 4 }}>
-                  <IconButton
-                    name="queue"
-                    label="Open queue"
-                    onPress={() => router.push("/queue")}
-                    size={46}
-                  />
-                  <Text style={[type.micro, { color: colors.faint }]}>
-                    QUEUE
-                  </Text>
-                </View>
+                {[
+                  {
+                    icon: (onPhone
+                      ? "downloaded"
+                      : "download") as IconName,
+                    label: onPhone
+                      ? "Downloaded to this phone"
+                      : saving
+                        ? "Saving to this phone"
+                        : "Download to this phone",
+                    caption: onPhone ? "SAVED" : saving ? "SAVING" : "PHONE",
+                    onPress: saveToPhone,
+                    disabled: onPhone || saving,
+                    active: onPhone || saving,
+                  },
+                  {
+                    icon: "clock" as IconName,
+                    label: "Sleep timer",
+                    caption: "SLEEP",
+                    onPress: () => setMenu(true),
+                    disabled: false,
+                    active: !!p.sleep || p.sleepAfterTrack,
+                  },
+                  {
+                    icon: "queue" as IconName,
+                    label: "Open queue",
+                    caption: "QUEUE",
+                    onPress: () => router.push("/queue"),
+                    disabled: false,
+                    active: false,
+                  },
+                ].map((item) => (
+                  <View
+                    key={item.caption}
+                    style={{ alignItems: "center", gap: 3 }}
+                  >
+                    <IconButton
+                      name={item.icon}
+                      label={item.label}
+                      active={item.active}
+                      disabled={item.disabled}
+                      onPress={item.onPress}
+                      size={40}
+                      iconSize={17}
+                    />
+                    <Text style={[type.micro, { color: colors.faint }]}>
+                      {item.caption}
+                    </Text>
+                  </View>
+                ))}
               </View>
 
               {!!(p.sleep || p.sleepAfterTrack) && (
                 <Text
                   style={[
-                    type.meta,
+                    type.micro,
                     { color: colors.muted, textAlign: "center" },
                   ]}
                 >
                   {p.sleepAfterTrack
-                    ? "Sleeping after this track"
-                    : `Sleep timer ${new Date(p.sleep!).toLocaleTimeString()}`}
+                    ? "SLEEPING AFTER THIS TRACK"
+                    : `SLEEP TIMER ${new Date(p.sleep!).toLocaleTimeString()}`}
                 </Text>
               )}
 
@@ -539,7 +522,7 @@ export default function Player() {
               )}
 
               {upcoming.length > 0 && (
-                <View style={{ gap: compact ? 6 : spacing.sm }}>
+                <View>
                   <SectionTitle
                     title="Up next"
                     action="Queue"
@@ -561,29 +544,36 @@ export default function Player() {
                         flexDirection: "row",
                         alignItems: "center",
                         gap: spacing.md,
-                        paddingVertical: 4,
+                        paddingVertical: spacing.sm,
+                        borderBottomWidth: 1,
+                        borderColor: colors.border,
                         opacity: pressed ? 0.6 : 1,
                       })}
                     >
-                      <Art song={entry.song} size={36} radius={8} />
-                      <View style={{ flex: 1 }}>
+                      <Art song={entry.song} size={32} radius={2} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
                         <Text
                           numberOfLines={1}
                           style={[
                             type.meta,
-                            { color: colors.text, fontWeight: "600" },
+                            {
+                              color: colors.text,
+                              fontFamily: font.uiMedium,
+                            },
                           ]}
                         >
                           {entry.song.title}
                         </Text>
                         <Text
                           numberOfLines={1}
-                          style={[type.micro, { color: colors.muted }]}
+                          style={[type.micro, { color: colors.faint }]}
                         >
                           {entry.song.artist}
                         </Text>
                       </View>
-                      <Icon name="queue" size={14} color={colors.faint} />
+                      <Text style={[type.numeric, { color: colors.faint }]}>
+                        {clock(entry.song.duration)}
+                      </Text>
                     </Pressable>
                   ))}
                 </View>
@@ -594,7 +584,7 @@ export default function Player() {
           <View
             style={{
               flex: 1,
-              paddingHorizontal: spacing.xxl,
+              paddingHorizontal: spacing.xl,
               paddingBottom: Math.max(insets.bottom, spacing.xl),
               justifyContent: "center",
               gap: spacing.lg,
@@ -611,7 +601,7 @@ export default function Player() {
                 label="Cancel playback request"
                 onPress={p.pause}
                 variant="outline"
-                size={48}
+                size={44}
               />
             )}
             {!!p.error && (
@@ -631,7 +621,7 @@ export default function Player() {
           style={{
             flex: 1,
             justifyContent: "flex-end",
-            backgroundColor: "rgba(0,0,0,0.46)",
+            backgroundColor: "rgba(0,0,0,0.5)",
           }}
         >
           <Pressable
@@ -641,11 +631,11 @@ export default function Player() {
           />
           <View
             style={{
-              backgroundColor: colors.surface,
-              borderTopLeftRadius: 26,
-              borderTopRightRadius: 26,
+              backgroundColor: colors.panel,
+              borderTopLeftRadius: radius.sm,
+              borderTopRightRadius: radius.sm,
               borderWidth: 1,
-              borderColor: colors.border,
+              borderColor: colors.borderStrong,
               paddingHorizontal: spacing.xl,
               paddingTop: spacing.sm,
               paddingBottom: Math.max(insets.bottom, spacing.xl),
@@ -655,9 +645,8 @@ export default function Player() {
             <View
               style={{
                 alignSelf: "center",
-                width: 38,
-                height: 4,
-                borderRadius: 4,
+                width: 32,
+                height: 2,
                 backgroundColor: colors.borderStrong,
                 marginBottom: spacing.md,
               }}
@@ -672,20 +661,20 @@ export default function Player() {
                     paddingBottom: spacing.sm,
                   }}
                 >
-                  <Art song={song} size={52} artworkSize={480} />
-                  <View style={{ flex: 1 }}>
+                  <Art song={song} size={44} radius={2} artworkSize={480} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
                     <Text
                       numberOfLines={1}
                       style={[
-                        type.body,
-                        { color: colors.text, fontWeight: "700" },
+                        type.meta,
+                        { color: colors.text, fontFamily: font.uiMedium },
                       ]}
                     >
                       {song.title}
                     </Text>
                     <Text
                       numberOfLines={1}
-                      style={[type.meta, { color: colors.muted }]}
+                      style={[type.micro, { color: colors.faint }]}
                     >
                       {song.artist}
                     </Text>
@@ -694,24 +683,13 @@ export default function Player() {
                     name="close"
                     label="Close options"
                     onPress={() => setMenu(false)}
-                    size={38}
+                    size={36}
+                    iconSize={16}
                   />
                 </View>
               )}
 
-              <Text
-                style={[
-                  type.micro,
-                  {
-                    color: colors.faint,
-                    textTransform: "uppercase",
-                    marginTop: spacing.md,
-                    marginBottom: spacing.xs,
-                  },
-                ]}
-              >
-                Track
-              </Text>
+              <Meta>Track</Meta>
               <MenuRow
                 title={
                   onPhone
@@ -748,22 +726,8 @@ export default function Player() {
                 }}
               />
 
-              <Text
-                style={[
-                  type.micro,
-                  {
-                    color: colors.faint,
-                    textTransform: "uppercase",
-                    marginTop: spacing.md,
-                    marginBottom: spacing.xs,
-                  },
-                ]}
-              >
-                Sleep timer
-              </Text>
-              <View
-                style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
-              >
+              <Meta>Sleep timer</Meta>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 <Chip
                   title="Finish track"
                   active={p.sleepAfterTrack}
@@ -775,11 +739,7 @@ export default function Player() {
                     title={`${minutes} min`}
                     active={
                       !!p.sleep &&
-                      Math.abs(
-                        p.sleep -
-                          Date.now() -
-                          minutes * 60000,
-                      ) < 60000
+                      Math.abs(p.sleep - Date.now() - minutes * 60000) < 60000
                     }
                     onPress={() => p.sleepFor(minutes)}
                   />
@@ -788,10 +748,7 @@ export default function Player() {
               </View>
               {!!(p.sleep || p.sleepAfterTrack) && (
                 <Text
-                  style={[
-                    type.meta,
-                    { color: colors.muted, marginTop: spacing.sm },
-                  ]}
+                  style={[type.meta, { color: colors.muted, marginTop: spacing.sm }]}
                 >
                   {p.sleepAfterTrack
                     ? "Playback stops when this track finishes, even with repeat enabled."
@@ -806,11 +763,3 @@ export default function Player() {
     </View>
   );
 }
-
-const StyleSheetAbsolute = {
-  position: "absolute" as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-};

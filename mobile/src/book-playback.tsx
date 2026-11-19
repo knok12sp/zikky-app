@@ -60,8 +60,9 @@ export function BookPlaybackProvider({
     native.volume = volume;
   }, [native, volume]);
   useEffect(() => {
-    native.setSleepTimer(sleepMinutes * 60);
-    return () => native.setSleepTimer(0);
+    // Web has no sleep timer on the native audio module.
+    native.setSleepTimer?.(sleepMinutes * 60);
+    return () => native.setSleepTimer?.(0);
   }, [native, sleepMinutes]);
   const currentRef = useRef<Current | null>(null);
   const statusRef = useRef(status);

@@ -3,7 +3,6 @@ import { FlatList, Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
 import {
   Page,
-  Label,
   Row,
   Busy,
   Field,
@@ -11,15 +10,16 @@ import {
   useTheme,
   Action,
 } from "../../src/ui";
-import { SongList } from "../../src/components";
+import { SongList, Art } from "../../src/components";
+import type { Song } from "../../src/api";
 import { useSongs, usePlaylists } from "../../src/data";
 import { useSession, queryClient } from "../../src/session";
 import { watchDownloads, completedSongs } from "../../src/offline";
 import { read } from "../../src/db";
 import { matchesSong, stringList, genreGroups } from "../../src/library";
-import { Chip, Segmented, SectionTitle, Card, IconButton } from "../../src/kit";
+import { Chip, Segmented, SectionTitle } from "../../src/kit";
 import { Icon } from "../../src/icon";
-import { radius, spacing, type } from "../../src/theme";
+import { font, radius, spacing, type } from "../../src/theme";
 
 const MODES = ["Songs", "Albums", "Artists", "Genres", "Playlists"] as const;
 const SORTS = [
@@ -34,12 +34,14 @@ function GroupRow({
   detail,
   marker,
   icon,
+  song,
   onPress,
 }: {
   title: string;
   detail?: string;
   marker?: string;
   icon?: "library" | "note";
+  song?: Song;
   onPress: () => unknown;
 }) {
   const { colors } = useTheme();
@@ -57,38 +59,47 @@ function GroupRow({
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      <View
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: 10,
-          backgroundColor: colors.surfaceInset,
-          borderWidth: 1,
-          borderColor: colors.border,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {marker ? (
-          <Text style={[type.heading, { color: colors.accent }]}>{marker}</Text>
-        ) : (
-          <Icon name={icon ?? "library"} size={20} color={colors.faint} />
-        )}
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
+      {song ? (
+        <Art song={song} size={36} radius={2} />
+      ) : (
+        <View
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: radius.sm,
+            backgroundColor: colors.surfaceInset,
+            borderWidth: 1,
+            borderColor: colors.border,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {marker ? (
+            <Text style={[type.numeric, { color: colors.accent, fontSize: 15 }]}>
+              {marker}
+            </Text>
+          ) : (
+            <Icon name={icon ?? "library"} size={16} color={colors.faint} />
+          )}
+        </View>
+      )}
+      <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
         <Text
           numberOfLines={2}
-          style={[type.body, { color: colors.text, fontWeight: "600" }]}
+          style={[
+            type.meta,
+            { color: colors.text, fontFamily: font.uiMedium },
+          ]}
         >
           {title}
         </Text>
         {!!detail && (
-          <Text numberOfLines={1} style={[type.meta, { color: colors.muted }]}>
+          <Text numberOfLines={1} style={[type.micro, { color: colors.faint }]}>
             {detail}
           </Text>
         )}
       </View>
-      <Icon name="chevronRight" size={22} color={colors.faint} />
+      <Icon name="chevronRight" size={16} color={colors.faint} />
     </Pressable>
   );
 }
@@ -129,7 +140,7 @@ export default function Library() {
   const data = (offline ? downloaded : (songs.data ?? [])).filter((s) =>
     matchesSong(s, filter),
   );
-  const groups =
+  const groups: { id?: string; name: string; detail: string; song?: Song }[] =
     mode === "Genres"
       ? genreGroups(data).map((g) => ({ ...g, detail: `${g.count} tracks` }))
       : Array.from(
@@ -142,9 +153,13 @@ export default function Library() {
                       id: s.albumId,
                       name: s.album ?? "Singles",
                       detail: s.artist,
+                      song: s,
                     },
                   ]
-                : [s.artistId, { id: s.artistId, name: s.artist, detail: "" }],
+                : [
+                    s.artistId,
+                    { id: s.artistId, name: s.artist, detail: "", song: s },
+                  ],
             ),
           ).values(),
         ).filter((g) => g.id);
@@ -197,7 +212,7 @@ export default function Library() {
             : "Music saved on your server"}
       </Text>
       {mode === "Playlists" && (
-        <Card inset padding={spacing.md} style={{ gap: spacing.sm }}>
+        <View style={{ gap: spacing.sm }}>
           <SectionTitle title="New playlist" />
           <Field
             label="New playlist name"
@@ -236,33 +251,51 @@ export default function Library() {
               Only completed phone copies are shown when you open a playlist.
             </Text>
           )}
-        </Card>
+        </View>
       )}
       {songs.isPending && !offline && mode !== "Playlists" && (
         <Busy label="Reading library" />
       )}
       {songs.isError && !offline && mode !== "Playlists" && (
-        <Card style={{ borderColor: colors.danger, gap: spacing.sm }}>
+        <View
+          style={{
+            gap: spacing.sm,
+            borderWidth: 1,
+            borderRadius: radius.sm,
+            borderColor: colors.danger,
+            backgroundColor: colors.dangerSoft,
+            padding: spacing.md,
+          }}
+        >
           <Text style={[type.meta, { color: colors.danger }]}>
             {songs.error.message} Cached metadata is shown where available.
           </Text>
           <Row>
             <Chip title="Retry library" onPress={() => songs.refetch()} />
           </Row>
-        </Card>
+        </View>
       )}
       {mode === "Playlists" && playlists.isPending && (
         <Busy label="Loading playlists" />
       )}
       {mode === "Playlists" && playlists.isError && (
-        <Card style={{ borderColor: colors.danger, gap: spacing.sm }}>
+        <View
+          style={{
+            gap: spacing.sm,
+            borderWidth: 1,
+            borderRadius: radius.sm,
+            borderColor: colors.danger,
+            backgroundColor: colors.dangerSoft,
+            padding: spacing.md,
+          }}
+        >
           <Text style={[type.meta, { color: colors.danger }]}>
             Could not refresh playlists. Saved playlists remain available.
           </Text>
           <Row>
             <Chip title="Retry playlists" onPress={() => playlists.refetch()} />
           </Row>
-        </Card>
+        </View>
       )}
     </View>
   );
@@ -304,11 +337,7 @@ export default function Library() {
           keyExtractor={(p) => p.id}
           ItemSeparatorComponent={() => (
             <View
-              style={{
-                height: 1,
-                backgroundColor: colors.border,
-                marginLeft: 68,
-              }}
+              style={{ height: 1, backgroundColor: colors.border }}
             />
           )}
           ListEmptyComponent={
@@ -323,8 +352,8 @@ export default function Library() {
           renderItem={({ item }) => (
             <GroupRow
               title={item.name}
-              detail={`${item.songCount} ${item.songCount === 1 ? "track" : "tracks"}`}
-              marker="≡"
+              detail={`${item.songCount} ${item.songCount === 1 ? "track" : "tracks"}${item.id.startsWith("bridge_") ? " · Smart collection" : ""}`}
+              marker={item.id.startsWith("bridge_") ? "✦" : "≡"}
               onPress={() =>
                 router.push({
                   pathname: "/collection",
@@ -350,11 +379,7 @@ export default function Library() {
           keyExtractor={(g) => g.id!}
           ItemSeparatorComponent={() => (
             <View
-              style={{
-                height: 1,
-                backgroundColor: colors.border,
-                marginLeft: 68,
-              }}
+              style={{ height: 1, backgroundColor: colors.border }}
             />
           )}
           ListEmptyComponent={
@@ -369,14 +394,9 @@ export default function Library() {
           renderItem={({ item }) => (
             <GroupRow
               title={item.name + (item.detail ? " · " + item.detail : "")}
-              detail={
-                mode === "Genres"
-                  ? item.detail
-                  : mode === "Albums"
-                    ? "Album"
-                    : "Artist"
-              }
+              detail={mode === "Genres" ? item.detail : undefined}
               marker={item.name.slice(0, 1).toUpperCase()}
+              song={mode === "Genres" ? undefined : item.song}
               onPress={() =>
                 router.push({
                   pathname: "/collection",

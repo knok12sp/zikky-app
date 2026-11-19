@@ -1,11 +1,9 @@
 import { CreatePlaylist, TrackActions } from "./TrackActions";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -13,16 +11,16 @@ import { useQuery } from "@tanstack/react-query";
 import { Art } from "../components";
 import { Icon, IconName } from "../icon";
 import { Action, Busy, Field, report, useTheme } from "../ui";
-import { IconButton, PlayButton } from "../kit";
+import { EmptyState, IconButton, NavGroup, PageHeader, SongTable } from "../kit";
 import { usePlaylists, useSongs } from "../data";
 import { usePlayback } from "../playback";
 import { queryClient, useSession, type Session } from "../session";
 import { Playlist, Song, parseSongs } from "../api";
 import { matchesSong, genreGroups, genreKey } from "../library";
-import { radius, spacing, type } from "../theme";
+import { breakpoints, font, radius, spacing, type } from "../theme";
 import { DesktopPlayer } from "./DesktopPlayer";
-
 import { DesktopBooks } from "./DesktopBooks";
+import { QueuePanel, TransportBar } from "./Transport";
 
 type ViewKey =
   | "home"
@@ -31,8 +29,8 @@ type ViewKey =
   | "artists"
   | "genres"
   | "playlists"
-  | "books"
   | "favorites"
+  | "books"
   | "settings";
 
 type Selection = {
@@ -51,6 +49,16 @@ const NAV: { key: ViewKey; title: string; icon: IconName }[] = [
   { key: "books", title: "Books", icon: "note" },
   { key: "playlists", title: "Playlists", icon: "queue" },
   { key: "favorites", title: "Favorites", icon: "heart" },
+];
+
+const NAV_GROUPS: {
+  title?: string;
+  keys: Exclude<ViewKey, "settings">[];
+}[] = [
+  { keys: ["home"] },
+  { title: "Library", keys: ["songs", "albums", "artists", "genres"] },
+  { title: "Collections", keys: ["playlists", "favorites"] },
+  { title: "Audiobooks", keys: ["books"] },
 ];
 
 const PLAYLIST_ICON: Record<string, IconName> = {
@@ -88,26 +96,34 @@ function NavItem({
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
-        height: 40,
-        paddingHorizontal: 12,
-        borderRadius: radius.md,
-        backgroundColor: active ? colors.accentSoft : "transparent",
-        opacity: pressed ? 0.6 : 1,
+        gap: 10,
+        height: 32,
+        paddingHorizontal: 10,
+        borderRadius: radius.sm,
+        backgroundColor: pressed ? colors.surfaceRaised : "transparent",
       })}
     >
+      <View
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 7,
+          bottom: 7,
+          width: 2,
+          backgroundColor: active ? colors.accent : "transparent",
+        }}
+      />
       <Icon
         name={icon}
-        size={17}
+        size={15}
         color={active ? colors.accent : colors.muted}
       />
       <Text
         style={[
-          type.body,
+          type.meta,
           {
-            color: active ? colors.accent : colors.muted,
-            fontWeight: active ? "700" : "500",
-            fontSize: 14,
+            color: active ? colors.text : colors.muted,
+            fontFamily: active ? font.uiMedium : font.ui,
           },
         ]}
       >
@@ -123,6 +139,7 @@ function SongRow({
   playing,
   onPlay,
   onFavorite,
+  onDelete,
   showArtist = true,
   showAlbum = true,
   showIndex = true,
@@ -132,14 +149,29 @@ function SongRow({
   playing?: boolean;
   onPlay: () => void;
   onFavorite: () => void;
+  onDelete?: () => void;
   showArtist?: boolean;
   showAlbum?: boolean;
   showIndex?: boolean;
 }) {
   const { colors } = useTheme();
   const [hover, setHover] = useState(false);
+  const tint = playing ? colors.accent : colors.text;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center" }}>
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        borderBottomWidth: 1,
+        borderColor:
+          playing || hover ? colors.borderStrong : colors.border,
+        backgroundColor: playing
+          ? colors.accentSoft
+          : hover
+            ? colors.surface
+            : "transparent",
+      }}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Play ${song.title} by ${song.artist}`}
@@ -151,22 +183,15 @@ function SongRow({
           flexDirection: "row",
           alignItems: "center",
           gap: spacing.md,
-          minHeight: 54,
-          paddingHorizontal: 10,
-          borderRadius: radius.sm,
-          backgroundColor: pressed
-            ? colors.surfaceRaised
-            : hover
-              ? colors.surface
-              : playing
-                ? colors.accentSoft
-                : "transparent",
+          minHeight: 48,
+          paddingHorizontal: spacing.sm,
+          opacity: pressed ? 0.72 : 1,
         })}
       >
         {showIndex && (
           <View style={{ width: 24, alignItems: "center" }}>
             {playing ? (
-              <Icon name="play" size={12} color={colors.accent} />
+              <Icon name="play" size={10} color={colors.accent} />
             ) : (
               <Text style={[type.numeric, { color: colors.faint }]}>
                 {index + 1}
@@ -174,25 +199,18 @@ function SongRow({
             )}
           </View>
         )}
-        <Art song={song} size={38} radius={7} />
-        <View style={{ flex: 1, minWidth: 120 }}>
+        <Art song={song} size={32} radius={radius.sm} />
+        <View style={{ flex: 1, minWidth: 120, gap: 1 }}>
           <Text
             numberOfLines={1}
-            style={[
-              type.body,
-              {
-                color: playing ? colors.accent : colors.text,
-                fontWeight: "600",
-                fontSize: 14,
-              },
-            ]}
+            style={[type.meta, { color: tint, fontFamily: font.uiMedium }]}
           >
             {song.title}
           </Text>
           {showArtist && (
             <Text
               numberOfLines={1}
-              style={[type.micro, { color: colors.muted, fontSize: 11 }]}
+              style={[type.micro, { color: colors.muted }]}
             >
               {song.artist}
             </Text>
@@ -201,10 +219,7 @@ function SongRow({
         {showAlbum && (
           <Text
             numberOfLines={1}
-            style={[
-              type.meta,
-              { color: colors.faint, flex: 0.7, fontSize: 12 },
-            ]}
+            style={[type.meta, { color: colors.faint, flex: 0.7 }]}
           >
             {song.album ?? ""}
           </Text>
@@ -215,21 +230,24 @@ function SongRow({
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "flex-end",
-            gap: 3,
+            gap: 4,
           }}
         >
           {!!song.rating && (
             <>
-              <Icon name="starFilled" size={11} color={colors.accent} />
-              <Text
-                style={[type.numeric, { color: colors.muted, fontSize: 10 }]}
-              >
+              <Icon name="starFilled" size={10} color={colors.accent} />
+              <Text style={[type.numeric, { color: colors.muted }]}>
                 {song.rating}
               </Text>
             </>
           )}
         </View>
-        <Text style={[type.numeric, { color: colors.faint, width: 44 }]}>
+        <Text
+          style={[
+            type.numeric,
+            { color: colors.faint, width: 48, textAlign: "right" },
+          ]}
+        >
           {clock(song.duration)}
         </Text>
       </Pressable>
@@ -238,27 +256,36 @@ function SongRow({
         name={song.starred ? "heartFilled" : "heart"}
         label={song.starred ? "Remove favorite" : "Add favorite"}
         onPress={onFavorite}
-        size={30}
-        iconSize={14}
-        color={song.starred ? colors.accent : colors.faint}
+        size={28}
+        iconSize={13}
+        color={song.starred ? colors.accent : hover ? colors.muted : colors.faint}
       />
+      {!!onDelete && (
+        <IconButton
+          name="trash"
+          label={`Delete ${song.title} from server`}
+          onPress={onDelete}
+          size={28}
+          iconSize={13}
+          color={colors.faint}
+        />
+      )}
+      <View style={{ width: spacing.sm }} />
     </View>
   );
 }
 
 function AlbumCard({
   song,
-  tracks,
+  size = 172,
   onPress,
 }: {
   song: Song;
-  tracks: Song[];
+  size?: number;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
   const [hover, setHover] = useState(false);
-  const { width } = useWindowDimensions();
-  const size = width > 1500 ? 196 : width > 1100 ? 180 : 148;
   return (
     <Pressable
       accessibilityRole="button"
@@ -268,121 +295,80 @@ function AlbumCard({
       onHoverOut={() => setHover(false)}
       style={({ pressed }) => ({
         width: size,
-        gap: 8,
-        opacity: pressed ? 0.7 : 1,
+        gap: spacing.sm,
+        opacity: pressed ? 0.72 : 1,
       })}
     >
       <View
         style={{
-          borderRadius: radius.md,
+          width: size,
+          height: size,
+          borderRadius: radius.sm,
           overflow: "hidden",
-          transform: [{ scale: hover ? 1.015 : 1 }],
+          borderWidth: 1,
+          borderColor: hover ? colors.borderStrong : colors.border,
         }}
       >
-        <Art song={song} size={size} radius={10} />
+        <Art song={song} size={size} radius={radius.sm} />
+        <View
+          style={{
+            position: "absolute",
+            right: 8,
+            bottom: 8,
+            width: 26,
+            height: 26,
+            borderRadius: radius.sm,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.accent,
+            opacity: hover ? 1 : 0,
+          }}
+        >
+          <Icon name="play" size={11} color={colors.onAccent} />
+        </View>
       </View>
       <View style={{ gap: 1 }}>
         <Text
           numberOfLines={1}
-          style={[type.meta, { color: colors.text, fontWeight: "700" }]}
+          style={[type.meta, { color: colors.text, fontFamily: font.uiMedium }]}
         >
           {song.album ?? "Singles"}
         </Text>
-        <Text
-          numberOfLines={1}
-          style={[type.micro, { color: colors.muted, fontSize: 11 }]}
-        >
-          {song.artist} · {tracks.length}{" "}
-          {tracks.length === 1 ? "track" : "tracks"}
+        <Text numberOfLines={1} style={[type.micro, { color: colors.faint }]}>
+          {song.artist}
         </Text>
       </View>
     </Pressable>
   );
 }
 
-function StandardHeader({
+function SectionHead({
   title,
-  subtitle,
-  query,
-  setQuery,
-  showSearch = true,
-  children,
+  aside,
 }: {
   title: string;
-  subtitle?: string;
-  query: string;
-  setQuery: (v: string) => void;
-  showSearch?: boolean;
-  children?: React.ReactNode;
+  aside?: React.ReactNode;
 }) {
   const { colors } = useTheme();
-  const [searchFocused, setSearchFocused] = useState(false);
   return (
-    <View style={{ gap: spacing.lg, paddingBottom: spacing.md }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          gap: spacing.xl,
-        }}
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.md,
+        marginBottom: spacing.lg,
+      }}
+    >
+      <Text
+        style={[
+          type.micro,
+          { color: colors.muted, textTransform: "uppercase" },
+        ]}
       >
-        <View style={{ gap: 4, flex: 1 }}>
-          <Text style={[type.display, { color: colors.text }]}>{title}</Text>
-          {!!subtitle && (
-            <Text style={[type.meta, { color: colors.muted }]}>{subtitle}</Text>
-          )}
-        </View>
-        {showSearch && (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              width: 290,
-              height: 42,
-              borderRadius: radius.pill,
-              borderWidth: 1,
-              borderColor: searchFocused ? colors.accent : colors.border,
-              backgroundColor: colors.surface,
-              paddingHorizontal: 14,
-            }}
-          >
-            <Icon name="search" size={16} color={colors.faint} />
-            <TextInput
-              accessibilityLabel={`Search ${title.toLowerCase()}`}
-              placeholder="Search this view"
-              placeholderTextColor={colors.faint}
-              value={query}
-              onChangeText={setQuery}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              style={{
-                flex: 1,
-                color: colors.text,
-                fontSize: 14,
-                ...(Platform.OS === "web"
-                  ? {
-                      outlineStyle: "solid" as const,
-                      outlineWidth: 0,
-                      outlineColor: "transparent",
-                    }
-                  : {}),
-              }}
-            />
-            {!!query && (
-              <IconButton
-                name="close"
-                label="Clear search"
-                onPress={() => setQuery("")}
-                size={24}
-                iconSize={12}
-              />
-            )}
-          </View>
-        )}
-      </View>
-      {children}
+        {title}
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+      {aside}
     </View>
   );
 }
@@ -402,6 +388,7 @@ function HomeView({
   const player = usePlayback();
   const { session } = useSession();
   const recent = useSongs("recent");
+  const { width } = useWindowDimensions();
   const albums = useMemo(() => {
     const map = new Map<string, Song[]>();
     for (const song of songs)
@@ -409,43 +396,72 @@ function HomeView({
         map.set(song.albumId, [...(map.get(song.albumId) ?? []), song]);
     return [...map.values()].slice(0, 8);
   }, [songs]);
-  const favorites = songs.filter((s) => s.starred).slice(0, 6);
+  const favorites = songs.filter((s) => s.starred);
   const now = player.queue.entries[player.queue.index]?.song;
+  const hero = now ?? songs[0];
+  const heroAlbum = hero?.albumId
+    ? songs.find((song) => song.albumId === hero.albumId)
+    : undefined;
+  const tile = width < 1280 ? 152 : 172;
+  const wide = width >= 1280;
   return (
-    <View style={{ gap: 34 }}>
+    <View style={{ gap: spacing.xxxl }}>
       <View
         style={{
-          borderRadius: radius.xl,
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.surface,
-          padding: 28,
           flexDirection: "row",
-          alignItems: "center",
-          gap: 24,
+          alignItems: "flex-end",
+          gap: spacing.gutter,
         }}
       >
-        <View style={{ flex: 1, gap: 8 }}>
-          <Text style={[type.micro, { color: colors.accent }]}>
-            {now ? (player.status.playing ? "NOW PLAYING" : "PAUSED") : "READY"}
-          </Text>
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            gap: spacing.sm,
+            paddingBottom: spacing.xs,
+          }}
+        >
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+          >
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                backgroundColor:
+                  now && player.status.playing ? colors.accent : colors.faint,
+              }}
+            />
+            <Text
+              style={[
+                type.micro,
+                {
+                  color:
+                    now && player.status.playing
+                      ? colors.accent
+                      : colors.muted,
+                  textTransform: "uppercase",
+                },
+              ]}
+            >
+              {now ? (player.status.playing ? "Now playing" : "Paused") : "Ready"}
+            </Text>
+          </View>
           <Text
-            style={{
-              color: colors.text,
-              fontSize: 34,
-              lineHeight: 40,
-              fontWeight: "800",
-              letterSpacing: -1.2,
-            }}
+            numberOfLines={2}
+            style={[type.display, { color: colors.text }]}
           >
             {now ? now.title : "Your library, in one quiet place."}
           </Text>
-          <Text style={[type.body, { color: colors.muted }]}>
+          <Text
+            numberOfLines={1}
+            style={[type.body, { color: colors.muted }]}
+          >
             {now
               ? now.artist
               : `${songs.length} ${songs.length === 1 ? "track" : "tracks"} · ${playlists.length} playlists on your server`}
           </Text>
-          <View style={{ flexDirection: "row", gap: 10, paddingTop: 8 }}>
+          <View style={{ flexDirection: "row", paddingTop: spacing.md }}>
             <Action
               title={
                 now
@@ -468,57 +484,102 @@ function HomeView({
                   songs,
                   Math.floor(Math.random() * songs.length),
                 );
+                player.shuffle();
               }}
             />
           </View>
         </View>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          {songs.slice(0, 3).map((song, i) => (
+        {hero && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open album ${hero.album ?? "Singles"}`}
+            disabled={!heroAlbum}
+            onPress={() => {
+              if (!heroAlbum?.albumId) return;
+              onAlbum({
+                kind: "album",
+                id: heroAlbum.albumId,
+                name: heroAlbum.album ?? "Singles",
+                detail: heroAlbum.artist,
+              });
+            }}
+            style={({ pressed }) => ({
+              width: wide ? 236 : 184,
+              gap: spacing.sm,
+              opacity: pressed ? 0.72 : 1,
+            })}
+          >
+            <Art song={hero} size={wide ? 236 : 184} radius={radius.sm} />
             <View
-              key={song.id}
               style={{
-                transform: [{ rotate: `${(i - 1) * 3}deg` }],
-                opacity: 0.9 - i * 0.12,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.sm,
               }}
             >
-              <Art song={song} size={i === 1 ? 130 : 100} radius={12} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    type.meta,
+                    { color: colors.text, fontFamily: font.uiMedium },
+                  ]}
+                >
+                  {hero.album ?? hero.title}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[type.micro, { color: colors.faint }]}
+                >
+                  {now ? now.artist : hero.artist}
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={14} color={colors.faint} />
             </View>
-          ))}
-        </View>
+          </Pressable>
+        )}
       </View>
 
       {!!albums.length && (
-        <View style={{ gap: 14 }}>
-          <Text style={[type.micro, { color: colors.muted }]}>
-            RECENTLY ADDED
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={{ flexDirection: "row", gap: 18 }}>
-              {albums.map((tracks) => (
-                <AlbumCard
-                  key={tracks[0]!.id}
-                  song={tracks[0]!}
-                  tracks={tracks}
-                  onPress={() =>
-                    onAlbum({
-                      kind: "album",
-                      id: tracks[0]!.albumId!,
-                      name: tracks[0]!.album ?? "Singles",
-                      detail: tracks[0]!.artist,
-                    })
-                  }
-                />
-              ))}
-            </View>
-          </ScrollView>
+        <View>
+          <SectionHead title="Recently added" />
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: spacing.lg,
+            }}
+          >
+            {albums.map((tracks) => (
+              <AlbumCard
+                key={tracks[0]!.id}
+                song={tracks[0]!}
+                size={tile}
+                onPress={() =>
+                  onAlbum({
+                    kind: "album",
+                    id: tracks[0]!.albumId!,
+                    name: tracks[0]!.album ?? "Singles",
+                    detail: tracks[0]!.artist,
+                  })
+                }
+              />
+            ))}
+          </View>
         </View>
       )}
 
-      <View style={{ flexDirection: "row", gap: 30, alignItems: "flex-start" }}>
-        <View style={{ flex: 1, gap: 10 }}>
-          <Text style={[type.micro, { color: colors.muted }]}>FAVORITES</Text>
+      <View
+        style={{
+          flexDirection: "row",
+          gap: spacing.gutter,
+          alignItems: "flex-start",
+        }}
+      >
+        <View style={{ flex: 1.6, minWidth: 0 }}>
+          <SectionHead title="Favorites" />
           {favorites.length ? (
-            favorites.map((song, i) => (
+            favorites.slice(0, 6).map((song, i) => (
               <SongRow
                 key={song.id}
                 song={song}
@@ -535,8 +596,8 @@ function HomeView({
             </Text>
           )}
         </View>
-        <View style={{ width: 340, gap: 10 }}>
-          <Text style={[type.micro, { color: colors.muted }]}>PLAYLISTS</Text>
+        <View style={{ width: wide ? 340 : 260, minWidth: 0 }}>
+          <SectionHead title="Playlists" />
           {playlists.slice(0, 6).map((playlist) => (
             <Pressable
               key={playlist.id}
@@ -552,35 +613,26 @@ function HomeView({
               style={({ pressed }) => ({
                 flexDirection: "row",
                 alignItems: "center",
-                gap: 12,
-                padding: 10,
-                borderRadius: radius.md,
-                borderWidth: 1,
+                gap: spacing.md,
+                minHeight: 48,
+                borderRadius: radius.sm,
+                borderBottomWidth: 1,
                 borderColor: colors.border,
-                backgroundColor: colors.surface,
                 opacity: pressed ? 0.65 : 1,
               })}
             >
-              <View
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 9,
-                  backgroundColor: colors.accentSoft,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Icon
-                  name={PLAYLIST_ICON[playlist.id] ?? "queue"}
-                  size={16}
-                  color={colors.accent}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
+              <Icon
+                name={PLAYLIST_ICON[playlist.id] ?? "queue"}
+                size={14}
+                color={colors.faint}
+              />
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text
                   numberOfLines={1}
-                  style={[type.meta, { color: colors.text, fontWeight: "700" }]}
+                  style={[
+                    type.meta,
+                    { color: colors.text, fontFamily: font.uiMedium },
+                  ]}
                 >
                   {playlist.name}
                 </Text>
@@ -589,7 +641,7 @@ function HomeView({
                   {playlist.songCount === 1 ? "TRACK" : "TRACKS"}
                 </Text>
               </View>
-              <Icon name="chevronRight" size={16} color={colors.faint} />
+              <Icon name="chevronRight" size={14} color={colors.faint} />
             </Pressable>
           ))}
           {!playlists.length && (
@@ -600,7 +652,18 @@ function HomeView({
         </View>
       </View>
       {!!recent.data?.length && (
-        <Text style={[type.micro, { color: colors.faint }]}>
+        <Text
+          style={[
+            type.micro,
+            {
+              color: colors.faint,
+              textTransform: "uppercase",
+              paddingTop: spacing.md,
+              borderTopWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           {recent.data.length} TRACKS IN YOUR LIBRARY
         </Text>
       )}
@@ -621,10 +684,12 @@ function DetailView({
   selection,
   songs,
   onBack,
+  onDelete,
 }: {
   selection: NonNullable<Selection>;
   songs: Song[];
   onBack: () => void;
+  onDelete?: (songs: Song[]) => void;
 }) {
   const { colors } = useTheme();
   const player = usePlayback();
@@ -632,7 +697,7 @@ function DetailView({
   const playlist = useQuery({
     queryKey: [session!.scope, "playlist", selection.id],
     enabled: selection.kind === "playlist",
-    queryFn: async ({ signal }) => {
+    queryFn: async () => {
       const data = await session!.api.rest("getPlaylist", {
         id: selection.id,
       });
@@ -640,57 +705,55 @@ function DetailView({
     },
   });
   const tracks = selection.kind === "playlist" ? (playlist.data ?? []) : songs;
-  const [filter, setFilter] = useState("");
-  const visible = tracks.filter((song) => matchesSong(song, filter));
   const artworkSong = tracks[0];
   const album = selection.kind === "album";
   const artist = selection.kind === "artist";
+  const genre = selection.kind === "genre";
   return (
-    <View style={{ gap: spacing.lg }}>
+    <View style={{ gap: spacing.xl }}>
       <View
         style={{
           flexDirection: "row",
           alignItems: "flex-end",
-          gap: spacing.xxl,
-          paddingBottom: spacing.lg,
+          gap: spacing.gutter,
         }}
       >
         <View
           style={{
-            width: 200,
-            height: 200,
-            borderRadius: artist ? 100 : 16,
+            width: 168,
+            height: 168,
+            borderRadius: radius.sm,
             overflow: "hidden",
             borderWidth: 1,
-            borderColor: colors.border,
+            borderColor: colors.borderStrong,
             backgroundColor: colors.surfaceInset,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
           {artworkSong ? (
-            <Art song={artworkSong} size={200} radius={artist ? 100 : 16} />
+            <Art song={artworkSong} size={168} radius={radius.sm} />
           ) : (
             <Icon
               name={artist ? "artist" : "library"}
-              size={54}
+              size={40}
               color={colors.faint}
             />
           )}
         </View>
-        <View style={{ flex: 1, gap: 8 }}>
-          <Text style={[type.micro, { color: colors.faint }]}>
-            {album ? "ALBUM" : artist ? "ARTIST" : "PLAYLIST"}
+        <View style={{ flex: 1, minWidth: 0, gap: spacing.sm }}>
+          <Text
+            style={[
+              type.micro,
+              { color: colors.faint, textTransform: "uppercase" },
+            ]}
+          >
+            {album ? "Album" : artist ? "Artist" : genre ? "Genre" : "Playlist"}
           </Text>
           <Text
             accessibilityRole="header"
-            style={{
-              color: colors.text,
-              fontSize: 40,
-              lineHeight: 46,
-              fontWeight: "800",
-              letterSpacing: -1.4,
-            }}
+            numberOfLines={2}
+            style={[type.hero, { color: colors.text }]}
           >
             {selection.name}
           </Text>
@@ -698,7 +761,15 @@ function DetailView({
             {selection.detail ? `${selection.detail} · ` : ""}
             {tracks.length} {tracks.length === 1 ? "track" : "tracks"}
           </Text>
-          <View style={{ flexDirection: "row", gap: 10, paddingTop: 8 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: spacing.sm,
+              paddingTop: spacing.md,
+            }}
+          >
             <Action
               title="Play"
               variant="primary"
@@ -725,57 +796,70 @@ function DetailView({
               variant="ghost"
               onPress={onBack}
             />
+            {album && !!onDelete && (
+              <Action
+                title="Delete album"
+                icon="trash"
+                danger
+                onPress={() => onDelete(tracks)}
+              />
+            )}
           </View>
         </View>
       </View>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          borderBottomWidth: 1,
-          borderColor: colors.border,
-          paddingBottom: 8,
-        }}
-      >
-        <Text style={[type.micro, { color: colors.faint, width: 34 }]}>#</Text>
-        <Text style={[type.micro, { color: colors.faint, flex: 1 }]}>
-          TITLE
-        </Text>
-        <Text style={[type.micro, { color: colors.faint, width: 52 }]}>
-          RATING
-        </Text>
-        <Text style={[type.micro, { color: colors.faint, width: 44 }]}>
-          TIME
-        </Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <View style={{ height: 1, backgroundColor: colors.border }} />
       {playlist.isPending && selection.kind === "playlist" ? (
         <Busy label="Loading playlist" />
-      ) : visible.length ? (
-        visible.map((song, i) => (
-          <SongRow
-            key={song.id}
-            song={song}
-            index={i}
-            onPlay={() => void player.select(visible, i)}
-            onFavorite={() => void toggleStar(session!, song)}
-            showAlbum={!album}
-            showArtist={!artist}
-          />
-        ))
-      ) : (
+      ) : tracks.length ? (
+        <SongTable showAlbum={!album} trailing={onDelete ? 116 : 88}>
+          {tracks.map((song, i) => (
+            <SongRow
+              key={song.id}
+              song={song}
+              index={i}
+              onPlay={() => void player.select(tracks, i)}
+              onFavorite={() => void toggleStar(session!, song)}
+              onDelete={onDelete ? () => onDelete([song]) : undefined}
+              showAlbum={!album}
+              showArtist={!artist}
+            />
+          ))}
+        </SongTable>
+      ) : playlist.isError ? (
         <Text style={[type.body, { color: colors.faint, paddingVertical: 30 }]}>
-          {playlist.isError
-            ? "This playlist could not be loaded. Refresh and try again."
-            : "No tracks here."}
+          This playlist could not be loaded. Refresh and try again.
         </Text>
+      ) : (
+        <EmptyState title="No tracks here." />
       )}
     </View>
   );
 }
 
-function SettingsView() {
+function SettingsSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        gap: spacing.md,
+        paddingBottom: spacing.xl,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <Text style={[type.heading, { color: colors.text }]}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+function SettingsView({ canManage }: { canManage: boolean }) {
   const { colors, mode, setMode } = useTheme();
   const { session, logout, updateAddresses } = useSession();
   const [alternates, setAlternates] = useState(
@@ -784,29 +868,16 @@ function SettingsView() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   return (
-    <View style={{ gap: spacing.xl, maxWidth: 820 }}>
-      <StandardHeader
+    <View style={{ gap: spacing.xl, maxWidth: 720 }}>
+      <PageHeader
         title="Settings"
         subtitle="Connection, appearance and library behaviour."
-        query=""
-        setQuery={() => {}}
-        showSearch={false}
       />
       {!!error && (
         <Text style={[type.meta, { color: colors.danger }]}>{error}</Text>
       )}
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: radius.lg,
-          backgroundColor: colors.surface,
-          padding: spacing.xl,
-          gap: spacing.md,
-        }}
-      >
-        <Text style={[type.heading, { color: colors.text }]}>Connection</Text>
-        <Text style={[type.meta, { color: colors.muted }]}>
+      <SettingsSection title="Connection">
+        <Text style={[type.micro, { color: colors.muted }]}>
           {session?.api.credentials.username} · {session?.api.activeServer}
         </Text>
         <Field
@@ -817,7 +888,7 @@ function SettingsView() {
           maxLength={2048}
           placeholder="http://192.168.1.10:8787"
         />
-        <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <Action
             title={busy === "addresses" ? "Testing…" : "Save addresses"}
             disabled={!!busy}
@@ -840,22 +911,17 @@ function SettingsView() {
             onPress={() => void logout()}
           />
         </View>
-        <Text style={[type.micro, { color: colors.faint }]}>
+        <Text
+          style={[
+            type.micro,
+            { color: colors.faint, textTransform: "uppercase" },
+          ]}
+        >
           STREAMING ONLY · NO MUSIC IS STORED ON THIS COMPUTER
         </Text>
-      </View>
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: radius.lg,
-          backgroundColor: colors.surface,
-          padding: spacing.xl,
-          gap: spacing.md,
-        }}
-      >
-        <Text style={[type.heading, { color: colors.text }]}>Appearance</Text>
-        <View style={{ flexDirection: "row", gap: 8 }}>
+      </SettingsSection>
+      <SettingsSection title="Appearance">
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
           {["system", "dark", "light"].map((value) => (
             <Action
               key={value}
@@ -868,24 +934,14 @@ function SettingsView() {
         <Text style={[type.meta, { color: colors.muted }]}>
           System follows your desktop appearance automatically.
         </Text>
-      </View>
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: radius.lg,
-          backgroundColor: colors.surface,
-          padding: spacing.xl,
-          gap: spacing.sm,
-        }}
-      >
-        <Text style={[type.heading, { color: colors.text }]}>Your library</Text>
-        <Text style={[type.meta, { color: colors.muted }]}>
-          This player streams from a standard Subsonic server and never changes
-          its library. Use the full Zikky server installation to manage the
-          music stored there.
+      </SettingsSection>
+      <SettingsSection title={canManage ? "Server library" : "Your library"}>
+        <Text style={[type.meta, { color: colors.muted, maxWidth: 620 }]}>
+          {canManage
+            ? "This Zikky build can permanently remove tracks and albums from your server library. Deletion is available from track rows, album screens and Now Playing. Phone downloads already stored on other devices are not affected."
+            : "This player streams from a standard Subsonic server and never changes its library. Use the full Zikky server installation to manage the music stored there."}
         </Text>
-      </View>
+      </SettingsSection>
     </View>
   );
 }
@@ -898,16 +954,13 @@ export function DesktopApp() {
   const [view, setView] = useState<ViewKey>("home");
   const [selection, setSelection] = useState<Selection>(null);
   const [query, setQuery] = useState("");
-  const [queueOpen, setQueueOpen] = useState(width >= 1280);
-  useEffect(() => {
-    if (width < 1280) setQueueOpen(false);
-  }, [width]);
+  const [queueOpen, setQueueOpen] = useState(false);
   const [playerOpen, setPlayerOpen] = useState(false);
+  const canManage = false;
   const songs = useSongs();
   const playlists = usePlaylists();
   const all = songs.data ?? [];
-  const compact = width < 1120;
-  const persistentQueue = queueOpen && width >= 1280;
+  const compact = width < breakpoints.compact;
   const albums = useMemo(() => {
     const map = new Map<string, Song[]>();
     for (const song of all)
@@ -938,13 +991,24 @@ export function DesktopApp() {
   }
 
   const filtered = all.filter((song) => matchesSong(song, query));
+  const genres = genreGroups(filtered);
+  const listedSongs =
+    view === "favorites" ? filtered.filter((song) => song.starred) : filtered;
+  const plural = (count: number, word: string) =>
+    `${count} ${word}${count === 1 ? "" : "s"}`;
+  const collectionSubtitle =
+    view === "favorites"
+      ? "The tracks you keep close."
+      : view === "albums"
+        ? `${plural(albums.length, "album")} in your library`
+        : view === "artists"
+          ? `${plural(artists.length, "artist")} in your library`
+          : view === "genres"
+            ? `${plural(genreGroups(all).length, "genre")} in your library`
+            : view === "playlists"
+              ? `${plural(playlists.data?.length ?? 0, "playlist")} in your library`
+              : `${all.length} tracks in your library`;
   const current = player.queue.entries[player.queue.index]?.song;
-  const libraryCurrent = current
-    ? all.find((song) => song.id === current.id)
-    : undefined;
-  const currentStarred = libraryCurrent
-    ? !!libraryCurrent.starred
-    : !!current?.starred;
   const title = selection
     ? selection.name
     : view === "home"
@@ -961,16 +1025,18 @@ export function DesktopApp() {
                 ? "Playlists"
                 : view === "favorites"
                   ? "Favorites"
-                  : "Settings";
+                  : view === "books"
+                    ? "Audiobooks"
+                      : "Settings";
 
   const main = (
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{
-        paddingHorizontal: compact ? 26 : 38,
-        paddingTop: 26,
-        paddingBottom: 120,
-        gap: spacing.lg,
+        paddingHorizontal: compact ? 24 : 40,
+        paddingTop: 32,
+        paddingBottom: spacing.xxxl,
+        gap: spacing.xl,
       }}
     >
       {selection ? (
@@ -990,19 +1056,17 @@ export function DesktopApp() {
           <View
             style={{
               flexDirection: "row",
-              alignItems: "flex-end",
+              alignItems: "center",
               justifyContent: "space-between",
               gap: spacing.xl,
+              paddingBottom: spacing.sm,
             }}
           >
-            <View style={{ gap: 4, flex: 1 }}>
-              <Text style={[type.display, { color: colors.text }]}>Home</Text>
-              <Text style={[type.meta, { color: colors.muted }]}>
-                {session?.api.credentials.username} · your server library
-              </Text>
-            </View>
-            <Text style={[type.meta, { color: colors.muted }]}>
-              {all.length} tracks · {albums.length} albums
+            <Text style={[type.micro, { color: colors.muted }]}>
+              {session?.api.credentials.username} · your server library
+            </Text>
+            <Text style={[type.numeric, { color: colors.faint }]}>
+              {plural(all.length, "track")} · {plural(albums.length, "album")}
             </Text>
           </View>
           {songs.isPending && !all.length ? (
@@ -1021,18 +1085,14 @@ export function DesktopApp() {
           )}
         </View>
       ) : view === "settings" ? (
-        <SettingsView />
+        <SettingsView canManage={canManage} />
       ) : (
         <>
-          <StandardHeader
+          <PageHeader
             title={title}
-            subtitle={
-              view === "favorites"
-                ? "The tracks you keep close."
-                : `${all.length} tracks in your library`
-            }
+            subtitle={collectionSubtitle}
             query={query}
-            setQuery={setQuery}
+            onQuery={setQuery}
             showSearch={view !== "playlists" || !!playlists.data?.length}
           />
           {songs.isPending && !all.length ? (
@@ -1042,14 +1102,20 @@ export function DesktopApp() {
               Could not load your library. {songs.error?.message}
             </Text>
           ) : view === "albums" ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 22 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: spacing.lg,
+              }}
+            >
               {albums
                 .filter((album) => matchesSong(album.tracks[0]!, query))
                 .map((album) => (
                   <AlbumCard
                     key={album.id}
                     song={album.tracks[0]!}
-                    tracks={album.tracks}
+                    size={width < 1280 ? 152 : 172}
                     onPress={() =>
                       setSelection({
                         kind: "album",
@@ -1078,113 +1144,170 @@ export function DesktopApp() {
                       })
                     }
                     style={({ pressed }) => ({
-                      width: 156,
-                      alignItems: "center",
-                      gap: 9,
+                      width: width < 1280 ? 152 : 172,
+                      gap: spacing.sm,
                       opacity: pressed ? 0.65 : 1,
                     })}
                   >
                     <View
                       style={{
-                        width: 140,
-                        height: 140,
-                        borderRadius: 70,
+                        width: width < 1280 ? 152 : 172,
+                        height: width < 1280 ? 152 : 172,
+                        borderRadius: radius.sm,
                         overflow: "hidden",
                         borderWidth: 1,
                         borderColor: colors.border,
                       }}
                     >
-                      <Art song={artist.tracks[0]!} size={140} radius={70} />
+                      <Art
+                        song={artist.tracks[0]!}
+                        size={width < 1280 ? 152 : 172}
+                        radius={radius.sm}
+                      />
                     </View>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        type.meta,
-                        { color: colors.text, fontWeight: "700" },
-                      ]}
-                    >
-                      {artist.name}
-                    </Text>
-                    <Text style={[type.micro, { color: colors.faint }]}>
-                      {artist.tracks.length} TRACKS
-                    </Text>
+                    <View style={{ gap: 1 }}>
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          type.meta,
+                          { color: colors.text, fontFamily: font.uiMedium },
+                        ]}
+                      >
+                        {artist.name}
+                      </Text>
+                      <Text style={[type.micro, { color: colors.faint }]}>
+                        {artist.tracks.length} TRACKS
+                      </Text>
+                    </View>
                   </Pressable>
                 ))}
             </View>
           ) : view === "genres" ? (
-            <View style={{ gap: spacing.md }}>
-              {genreGroups(filtered).map((group) => (
-                <Action
+            <View>
+              {genres.map((group) => (
+                <View
                   key={group.id}
-                  title={`${group.name} · ${group.count} tracks`}
-                  onPress={() =>
-                    setSelection({
-                      kind: "genre",
-                      id: group.id,
-                      name: group.name,
-                    })
-                  }
-                />
-              ))}
-              {!filtered.length && (
-                <Text style={{ color: colors.muted }}>
-                  No songs yet. Add genre labels from a track’s options.
-                </Text>
-              )}
-            </View>
-          ) : view === "playlists" ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-              <CreatePlaylist />
-              {(playlists.data ?? [])
-                .filter((playlist) =>
-                  playlist.name.toLowerCase().includes(query.toLowerCase()),
-                )
-                .map((playlist) => (
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: spacing.md,
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  }}
+                >
                   <Pressable
-                    key={playlist.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open playlist ${playlist.name}`}
+                    accessibilityLabel={`Open ${group.name}, ${plural(group.count, "track")}`}
                     onPress={() =>
                       setSelection({
-                        kind: "playlist",
-                        id: playlist.id,
-                        name: playlist.name,
-                        detail: "Playlist",
+                        kind: "genre",
+                        id: group.id,
+                        name: group.name,
                       })
                     }
                     style={({ pressed }) => ({
-                      width: 250,
-                      padding: spacing.lg,
-                      gap: 22,
-                      borderRadius: radius.lg,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      backgroundColor: colors.surface,
+                      flex: 1,
+                      minHeight: 52,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: spacing.md,
                       opacity: pressed ? 0.65 : 1,
                     })}
                   >
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 12,
-                        backgroundColor: colors.accentSoft,
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        type.meta,
+                        {
+                          flexShrink: 1,
+                          color: colors.text,
+                          fontFamily: font.uiMedium,
+                        },
+                      ]}
+                    >
+                      {group.name}
+                    </Text>
+                    <View style={{ flex: 1 }} />
+                    <Text style={[type.numeric, { color: colors.faint }]}>
+                      {group.count}
+                    </Text>
+                  </Pressable>
+                  <IconButton
+                    name="play"
+                    label={`Play ${group.name}`}
+                    size={28}
+                    iconSize={13}
+                    color={colors.faint}
+                    onPress={() =>
+                      void player.select(
+                        filtered.filter((song) => genreKey(song) === group.id),
+                        0,
+                      )
+                    }
+                  />
+                </View>
+              ))}
+              {!genres.length && (
+                <EmptyState
+                  icon="note"
+                  title={query ? "No genres match" : "No genres yet"}
+                  message={
+                    query
+                      ? "No genres match this search."
+                      : "Add genre labels from a track’s options."
+                  }
+                  action={query ? "Clear search" : "Browse songs"}
+                  onAction={() => (query ? setQuery("") : go("songs"))}
+                />
+              )}
+            </View>
+          ) : view === "playlists" ? (
+            <View style={{ gap: spacing.xl }}>
+              <View style={{ maxWidth: 440 }}>
+                <CreatePlaylist />
+              </View>
+              <View>
+                {(playlists.data ?? [])
+                  .filter((playlist) =>
+                    playlist.name.toLowerCase().includes(query.toLowerCase()),
+                  )
+                  .map((playlist) => (
+                    <Pressable
+                      key={playlist.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open playlist ${playlist.name}`}
+                      onPress={() =>
+                        setSelection({
+                          kind: "playlist",
+                          id: playlist.id,
+                          name: playlist.name,
+                          detail: "Playlist",
+                        })
+                      }
+                      style={({ pressed }) => ({
+                        flexDirection: "row",
                         alignItems: "center",
-                        justifyContent: "center",
-                      }}
+                        gap: spacing.md,
+                        minHeight: 52,
+                        borderBottomWidth: 1,
+                        borderColor: colors.border,
+                        opacity: pressed ? 0.65 : 1,
+                      })}
                     >
                       <Icon
                         name={PLAYLIST_ICON[playlist.id] ?? "queue"}
-                        size={20}
-                        color={colors.accent}
+                        size={15}
+                        color={colors.faint}
                       />
-                    </View>
-                    <View>
                       <Text
                         numberOfLines={1}
                         style={[
-                          type.body,
-                          { color: colors.text, fontWeight: "700" },
+                          type.meta,
+                          {
+                            flex: 1,
+                            color: colors.text,
+                            fontFamily: font.uiMedium,
+                          },
                         ]}
                       >
                         {playlist.name}
@@ -1193,41 +1316,37 @@ export function DesktopApp() {
                         {playlist.songCount}{" "}
                         {playlist.songCount === 1 ? "TRACK" : "TRACKS"}
                       </Text>
-                    </View>
-                  </Pressable>
-                ))}
+                      <Icon name="chevronRight" size={14} color={colors.faint} />
+                    </Pressable>
+                  ))}
+              </View>
             </View>
           ) : (
             <View style={{ gap: 2 }}>
-              {(view === "favorites"
-                ? filtered.filter((song) => song.starred)
-                : filtered
-              ).map((song, i, list) => (
-                <SongRow
-                  key={song.id}
-                  song={song}
-                  index={i}
-                  playing={current?.id === song.id}
-                  onPlay={() => void player.select(list, i)}
-                  onFavorite={() => void toggleStar(session!, song)}
-                />
-              ))}
-              {!filtered.length && (
-                <View
-                  style={{ alignItems: "center", paddingVertical: 80, gap: 8 }}
-                >
-                  <Icon name="note" size={34} color={colors.faint} />
-                  <Text style={[type.heading, { color: colors.text }]}>
-                    Nothing here
-                  </Text>
-                  <Text style={[type.meta, { color: colors.muted }]}>
-                    {query
+              {listedSongs.length ? (
+                <SongTable trailing={88}>
+                  {listedSongs.map((song, i, list) => (
+                    <SongRow
+                      key={song.id}
+                      song={song}
+                      index={i}
+                      playing={current?.id === song.id}
+                      onPlay={() => void player.select(list, i)}
+                      onFavorite={() => void toggleStar(session!, song)}
+                    />
+                  ))}
+                </SongTable>
+              ) : (
+                <EmptyState
+                  title="Nothing here"
+                  message={
+                    query
                       ? "No tracks match this search."
                       : view === "favorites"
                         ? "Favorite a track to find it here."
-                        : "Your server library is empty."}
-                  </Text>
-                </View>
+                        : "Your server library is empty."
+                  }
+                />
               )}
             </View>
           )}
@@ -1237,47 +1356,53 @@ export function DesktopApp() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, flexDirection: "row" }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View style={{ flex: 1, flexDirection: "row", minHeight: 0 }}>
       <View
         style={{
-          width: 224,
+          width: 208,
           borderRightWidth: 1,
           borderColor: colors.border,
           backgroundColor: colors.surface,
-          paddingHorizontal: 12,
+          paddingHorizontal: 8,
           paddingTop: 18,
-          paddingBottom: 14,
+          paddingBottom: 12,
         }}
       >
         <View
           style={{
             flexDirection: "row",
             alignItems: "center",
-            gap: 10,
+            gap: 9,
             paddingHorizontal: 10,
-            paddingBottom: 20,
+            paddingBottom: 22,
           }}
         >
           <View
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 9,
-              backgroundColor: colors.accent,
+              width: 26,
+              height: 26,
+              borderRadius: radius.sm,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              backgroundColor: colors.surfaceInset,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Icon name="note" size={18} color={colors.onAccent} />
+            <Icon name="note" size={15} color={colors.accent} />
           </View>
-          <View>
+          <View style={{ gap: 1 }}>
             <Text
-              style={{
-                color: colors.text,
-                fontSize: 16,
-                fontWeight: "800",
-                letterSpacing: 2.4,
-              }}
+              style={[
+                type.meta,
+                {
+                  color: colors.text,
+                  fontFamily: font.uiBold,
+                  letterSpacing: 3.2,
+                  fontSize: 13,
+                },
+              ]}
             >
               ZIKKY
             </Text>
@@ -1286,18 +1411,28 @@ export function DesktopApp() {
             </Text>
           </View>
         </View>
-        <View style={{ gap: 3 }}>
-          {NAV.map((item) => (
-            <NavItem
-              key={item.key}
-              title={item.title}
-              icon={item.icon}
-              active={view === item.key && !selection}
-              onPress={() => go(item.key)}
-            />
+        <ScrollView
+          style={{ flex: 1, minHeight: 0 }}
+          contentContainerStyle={{ gap: 0 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {NAV_GROUPS.map((group, index) => (
+            <NavGroup key={group.title ?? index} title={group.title}>
+              {group.keys.map((key) => {
+                const item = NAV.find((entry) => entry.key === key)!;
+                return (
+                  <NavItem
+                    key={item.key}
+                    title={item.title}
+                    icon={item.icon}
+                    active={view === item.key && !selection}
+                    onPress={() => go(item.key)}
+                  />
+                );
+              })}
+            </NavGroup>
           ))}
-        </View>
-        <View style={{ flex: 1 }} />
+        </ScrollView>
         <View style={{ gap: 3 }}>
           <NavItem
             title="Settings"
@@ -1308,11 +1443,11 @@ export function DesktopApp() {
           <View
             style={{
               marginTop: 10,
+              borderTopWidth: 1,
+              borderColor: colors.border,
               paddingHorizontal: 10,
-              paddingVertical: 10,
-              borderRadius: radius.md,
-              backgroundColor: colors.surfaceInset,
-              gap: 3,
+              paddingTop: 10,
+              gap: 4,
             }}
           >
             <View
@@ -1322,7 +1457,6 @@ export function DesktopApp() {
                 style={{
                   width: 6,
                   height: 6,
-                  borderRadius: 3,
                   backgroundColor: colors.accent,
                 }}
               />
@@ -1334,7 +1468,7 @@ export function DesktopApp() {
               numberOfLines={1}
               style={[
                 type.micro,
-                { color: colors.faint, textTransform: "none" },
+                { color: colors.faint, textTransform: "none", fontSize: 10 },
               ]}
             >
               {session?.api.credentials.username} ·{" "}
@@ -1346,306 +1480,33 @@ export function DesktopApp() {
 
       <View style={{ flex: 1, minWidth: 0 }}>
         {/* Kept mounted so an audiobook keeps playing while another view is open. */}
-        <ScrollView style={{ flex: 1, minHeight: 0, display: view === "books" ? "flex" : "none" }}
-          contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg, paddingBottom: 120 }}>
+        <ScrollView
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: view === "books" ? "flex" : "none",
+          }}
+          contentContainerStyle={{
+            paddingHorizontal: compact ? 24 : 40,
+            paddingTop: 32,
+            gap: spacing.xl,
+            paddingBottom: spacing.xxxl,
+          }}
+        >
           <DesktopBooks />
         </ScrollView>
         {view === "books" ? null : main}
       </View>
 
-      {queueOpen && !persistentQueue && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close queue"
-          onPress={() => setQueueOpen(false)}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 224,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(3,7,4,0.5)",
-            zIndex: 19,
-          }}
-        />
-      )}
-      {queueOpen && (
-        <View
-          style={{
-            width: 310,
-            borderLeftWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.surface,
-            padding: 16,
-            gap: 10,
-            ...(persistentQueue
-              ? {}
-              : {
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  zIndex: 20,
-                  shadowColor: "#000",
-                  shadowOpacity: 0.35,
-                  shadowRadius: 24,
-                  shadowOffset: { width: -12, height: 0 },
-                  elevation: 16,
-                }),
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <View>
-              <Text style={[type.micro, { color: colors.muted }]}>QUEUE</Text>
-              <Text style={[type.meta, { color: colors.faint }]}>
-                {player.queue.entries.length} tracks
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", gap: 2 }}>
-              {!!player.queue.entries.length && (
-                <IconButton
-                  name="close"
-                  label="Clear queue"
-                  onPress={() => void player.clear()}
-                  size={30}
-                  iconSize={13}
-                  color={colors.faint}
-                />
-              )}
-              <IconButton
-                name="chevronRight"
-                label="Close queue"
-                onPress={() => setQueueOpen(false)}
-                size={30}
-                iconSize={15}
-              />
-            </View>
-          </View>
-          <ScrollView contentContainerStyle={{ gap: 4, paddingBottom: 90 }}>
-            {player.queue.entries.map((entry, index) => (
-              <Pressable
-                key={entry.key}
-                accessibilityRole="button"
-                accessibilityLabel={`Play ${entry.song.title}`}
-                onPress={() => player.skip(index)}
-                style={({ pressed }) => ({
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 9,
-                  padding: 7,
-                  borderRadius: radius.sm,
-                  backgroundColor:
-                    index === player.queue.index
-                      ? colors.accentSoft
-                      : pressed
-                        ? colors.surfaceRaised
-                        : "transparent",
-                })}
-              >
-                <Art song={entry.song} size={34} radius={6} />
-                <View style={{ flex: 1 }}>
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      type.meta,
-                      {
-                        color:
-                          index === player.queue.index
-                            ? colors.accent
-                            : colors.text,
-                        fontWeight: "600",
-                        fontSize: 12,
-                      },
-                    ]}
-                  >
-                    {entry.song.title}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[type.micro, { color: colors.muted, fontSize: 10 }]}
-                  >
-                    {entry.song.artist}
-                  </Text>
-                </View>
-                <IconButton
-                  name="close"
-                  label={`Remove ${entry.song.title} from queue`}
-                  onPress={() => void player.remove(index)}
-                  size={22}
-                  iconSize={10}
-                  color={colors.faint}
-                />
-              </Pressable>
-            ))}
-            {!player.queue.entries.length && (
-              <Text style={[type.meta, { color: colors.faint }]}>
-                Nothing queued. Play a track to start.
-              </Text>
-            )}
-          </ScrollView>
-        </View>
-      )}
+      </View>
 
-      {!!current && (
-        <View
-          style={{
-            position: "absolute",
-            left: 224,
-            right: persistentQueue ? 310 : 0,
-            bottom: 0,
-            height: 78,
-            borderTopWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.surface,
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 18,
-            gap: 16,
-          }}
-        >
-          <View
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 2,
-              backgroundColor: colors.border,
-            }}
-          >
-            <View
-              style={{
-                height: 2,
-                width: `${Math.min(100, (player.status.currentTime / Math.max(1, player.status.duration)) * 100)}%`,
-                backgroundColor: colors.accent,
-              }}
-            />
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open full-screen player"
-            onPress={() => setPlayerOpen(true)}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 11,
-              width: 300,
-            }}
-          >
-            <Art song={current} size={50} radius={8} />
-            <View style={{ flex: 1 }}>
-              <Text
-                numberOfLines={1}
-                style={[
-                  type.body,
-                  { color: colors.text, fontWeight: "700", fontSize: 14 },
-                ]}
-              >
-                {current.title}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={[type.micro, { color: colors.muted, fontSize: 11 }]}
-              >
-                {current.artist}
-              </Text>
-            </View>
-          </Pressable>
-          <View
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
-          >
-            <IconButton
-              name={currentStarred ? "heartFilled" : "heart"}
-              label={currentStarred ? "Remove favorite" : "Add favorite"}
-              onPress={() => void toggleStar(session!, current)}
-              size={32}
-              iconSize={15}
-              color={currentStarred ? colors.accent : colors.muted}
-            />
-            <IconButton
-              name="previous"
-              label="Previous track"
-              onPress={player.previous}
-              size={34}
-              iconSize={16}
-            />
-            <PlayButton
-              playing={player.status.playing}
-              busy={!!player.busy}
-              onPress={player.toggle}
-              size={42}
-            />
-            <IconButton
-              name="next"
-              label="Next track"
-              onPress={player.next}
-              size={34}
-              iconSize={16}
-            />
-            <Text
-              numberOfLines={1}
-              style={[
-                type.numeric,
-                {
-                  color: colors.faint,
-                  marginLeft: 8,
-                  width: 84,
-                  flexShrink: 0,
-                },
-              ]}
-            >
-              {clock(player.status.currentTime)} /{" "}
-              {clock(player.status.duration)}
-            </Text>
-          </View>
-          <View
-            style={{
-              width: 190,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "flex-end",
-              gap: 2,
-            }}
-          >
-            <IconButton
-              name={player.volume === 0 ? "volumeOff" : "volume"}
-              label={player.volume === 0 ? "Unmute" : "Mute"}
-              onPress={() => player.setVolume(player.volume === 0 ? 0.7 : 0)}
-              size={30}
-              iconSize={14}
-              color={colors.muted}
-            />
-            <IconButton
-              name="queue"
-              label={queueOpen ? "Hide queue" : "Show queue"}
-              active={queueOpen}
-              onPress={() => setQueueOpen(!queueOpen)}
-              size={34}
-              iconSize={16}
-            />
-            <IconButton
-              name="chevronDown"
-              label="Open full-screen player"
-              onPress={() => setPlayerOpen(true)}
-              rotate={180}
-              size={34}
-              iconSize={17}
-            />
-          </View>
-        </View>
-      )}
+      <TransportBar
+        queueOpen={queueOpen}
+        onQueue={() => setQueueOpen(!queueOpen)}
+        onExpand={() => setPlayerOpen(true)}
+      />
+
+      {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
 
       {playerOpen && (
         <DesktopPlayer
@@ -1656,6 +1517,7 @@ export function DesktopApp() {
           }}
         />
       )}
+
     </View>
   );
 }

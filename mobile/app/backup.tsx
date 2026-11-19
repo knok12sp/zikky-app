@@ -4,7 +4,7 @@ import { View } from "react-native";
 import { File } from "expo-file-system";
 import * as FS from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { Page, Action, Label, report, confirm, useTheme } from "../src/ui";
+import { Page, Action, Label, Row, report, confirm, useTheme } from "../src/ui";
 import { useSession } from "../src/session";
 import { usePlayback } from "../src/playback";
 import { completedSongs, watchDownloads } from "../src/offline";
@@ -18,7 +18,8 @@ import {
 import { db, write } from "../src/db";
 import { laterKey, notifyLater } from "../src/listen-later";
 import { collectionDownloads } from "../src/download-policy";
-import { Card, SectionTitle, Banner, BackButton } from "../src/kit";
+import { SectionTitle, Banner, BackButton } from "../src/kit";
+import { spacing } from "../src/theme";
 export default function BackupScreen() {
   const { session } = useSession();
   const player = usePlayback();
@@ -128,45 +129,44 @@ export default function BackupScreen() {
         .missing
     : [];
   return (
-    <Page
-      title="Backup & recovery"
-      subtitle="Metadata only. Audio and credentials stay out."
-    >
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
+    <Page title="">
+      <Row>
         <BackButton onPress={() => router.back()} />
-      </View>
-      <Card inset>
-        <Label variant="meta" muted>
-          Export bookmarks, settings, your paused queue and a list of phone
-          downloads. Full metadata export also includes favorite and
-          user-playlist snapshots from the server. Passwords, resume tokens and
-          audio files are excluded.
-        </Label>
-      </Card>
+        <View style={{ flex: 1 }}>
+          <Label variant="title">Backup & recovery</Label>
+          <Label muted variant="meta">
+            Metadata only. Audio and credentials stay out.
+          </Label>
+        </View>
+      </Row>
+      <Label variant="meta" muted>
+        Export bookmarks, settings, your paused queue and a list of phone
+        downloads. Full metadata export also includes favorite and
+        user-playlist snapshots from the server. Passwords, resume tokens and
+        audio files are excluded.
+      </Label>
 
       <SectionTitle title="Export" />
-      <Card padding={0}>
-        <View style={{ padding: 16, gap: 10 }}>
-          <Action
-            title="Export full metadata backup"
-            variant="primary"
-            disabled={working}
-            onPress={() => run(() => exportFile(true))}
-          />
-          <Action
-            title="Export phone metadata only (offline)"
-            variant="secondary"
-            disabled={working}
-            onPress={() => run(() => exportFile(false))}
-          />
-          <Action
-            title="Open backup JSON"
-            variant="secondary"
-            disabled={working}
-            onPress={() => run(openFile)}
-          />
-        </View>
-      </Card>
+      <View style={{ gap: spacing.sm }}>
+        <Action
+          title="Export full metadata backup"
+          variant="primary"
+          disabled={working}
+          onPress={() => run(() => exportFile(true))}
+        />
+        <Action
+          title="Export phone metadata only (offline)"
+          variant="secondary"
+          disabled={working}
+          onPress={() => run(() => exportFile(false))}
+        />
+        <Action
+          title="Open backup JSON"
+          variant="secondary"
+          disabled={working}
+          onPress={() => run(openFile)}
+        />
+      </View>
       {working && controller.current && (
         <Action
           title="Cancel metadata export"
@@ -178,11 +178,19 @@ export default function BackupScreen() {
       {loaded && (
         <>
           <SectionTitle title="Review backup" />
-          <Card>
-            <Label variant="meta" muted>
+          <View
+            style={{
+              borderTopWidth: 1,
+              borderBottomWidth: 1,
+              borderColor: theme.colors.border,
+              paddingVertical: spacing.md,
+              gap: spacing.xs,
+            }}
+          >
+            <Label variant="micro" muted>
               {new Date(loaded.createdAt).toLocaleString()}
             </Label>
-            <Label>
+            <Label variant="meta">
               {loaded.listenLater.length} bookmarks ·{" "}
               {loaded.queue.entries.length} queue entries ·{" "}
               {loaded.downloadedTracks.length} previous phone downloads
@@ -192,14 +200,13 @@ export default function BackupScreen() {
                 ? `${loaded.library.favorites.length} favorite snapshots · ${loaded.library.playlists.length} playlist snapshots`
                 : "No server snapshots in this file"}
             </Label>
-            <View style={{ height: 12 }} />
             <Label variant="meta" muted>
               Restoration merges bookmarks and replaces local settings and
               queue. Server favorites and playlists reconnect from your
               permanent server library. Snapshots are retained for reference,
               not automatically imported.
             </Label>
-          </Card>
+          </View>
           <Action
             title="Restore phone metadata"
             variant="primary"

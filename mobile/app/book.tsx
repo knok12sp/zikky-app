@@ -7,7 +7,7 @@ import { useSession } from "../src/session";
 import { useBookPlayback, BOOK_RATES } from "../src/book-playback";
 import { IconButton } from "../src/kit";
 import { Action } from "../src/ui";
-import { radius, spacing, type } from "../src/theme";
+import { radius, spacing, type, font } from "../src/theme";
 
 function clock(seconds: number) {
   const total = Math.max(0, Math.round(seconds));
@@ -65,7 +65,7 @@ export default function BookScreen() {
             style={{
               width: 120,
               height: 120,
-              borderRadius: radius.lg,
+              borderRadius: radius.sm,
               backgroundColor: colors.surfaceInset,
             }}
           />
@@ -74,7 +74,7 @@ export default function BookScreen() {
             style={{
               width: 120,
               height: 120,
-              borderRadius: radius.lg,
+              borderRadius: radius.sm,
               backgroundColor: colors.surfaceInset,
               alignItems: "center",
               justifyContent: "center",
@@ -116,7 +116,7 @@ export default function BookScreen() {
           style={{
             marginTop: spacing.lg,
             padding: spacing.md,
-            borderRadius: radius.lg,
+            borderRadius: radius.sm,
             backgroundColor: colors.surface,
             gap: spacing.sm,
           }}
@@ -228,7 +228,7 @@ export default function BookScreen() {
                     {
                       color:
                         books.rate === rate ? colors.onAccent : colors.muted,
-                      fontWeight: "700",
+                      fontFamily: font.uiMedium,
                     },
                   ]}
                 >
@@ -274,7 +274,7 @@ export default function BookScreen() {
                 {
                   flex: 1,
                   color: active ? colors.accent : colors.text,
-                  fontWeight: active ? "700" : "400",
+                  fontFamily: active ? font.uiMedium : font.ui,
                 },
               ]}
             >

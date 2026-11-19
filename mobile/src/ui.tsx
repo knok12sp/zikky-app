@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   Pressable,
   Text,
@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { read, write } from "./db";
-import { dark, light, spacing, radius, type, Palette } from "./theme";
+import { dark, light, spacing, radius, type, font, Palette } from "./theme";
 import { Icon, IconName } from "./icon";
 
 type ThemeValue = {
@@ -41,6 +41,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     write("device", "appearance", value);
   };
   const colors = (mode === "system" ? system : mode) === "light" ? light : dark;
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    document.documentElement.style.setProperty("--zikky-focus", colors.focus);
+  }, [colors.focus]);
   return (
     <Theme.Provider value={{ colors, mode, setMode, spacing, radius, type }}>
       <StatusBar style={colors === light ? "dark" : "light"} />
@@ -117,13 +121,15 @@ export function Action({
   const filled = variant === "primary";
   const row = variant === "row";
   const dangerVariant = danger || variant === "danger";
-  const textColor = filled
-    ? colors.onAccent
-    : dangerVariant
-      ? colors.danger
-      : variant === "ghost"
-        ? colors.accent
-        : colors.text;
+  const textColor = disabled
+    ? colors.faint
+    : filled
+      ? colors.onAccent
+      : dangerVariant
+        ? colors.danger
+        : variant === "ghost"
+          ? colors.accent
+          : colors.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -139,32 +145,36 @@ export function Action({
       disabled={disabled}
       style={({ pressed }) => [
         {
-          minHeight: 48,
-          paddingHorizontal: row ? 16 : variant === "ghost" ? 10 : 16,
+          minHeight: 46,
+          paddingHorizontal: row ? 0 : variant === "ghost" ? 8 : 14,
           paddingVertical: 11,
-          borderRadius: row ? 0 : variant === "ghost" ? radius.md : radius.pill,
-          backgroundColor: row
+          borderRadius: row ? 0 : radius.sm,
+          backgroundColor: disabled
             ? "transparent"
-            : filled
-              ? colors.accent
+            : row
+              ? "transparent"
+              : filled
+                ? colors.accent
+                : selected
+                  ? colors.accentSoft
+                  : dangerVariant
+                    ? colors.dangerSoft
+                    : variant === "ghost"
+                      ? "transparent"
+                      : colors.surfaceRaised,
+          opacity: pressed ? 0.68 : 1,
+          borderColor: disabled
+            ? colors.border
+            : row
+              ? "transparent"
               : selected
-                ? colors.accentSoft
+                ? colors.accent
                 : dangerVariant
-                  ? colors.dangerSoft
-                  : variant === "ghost"
-                    ? "transparent"
-                    : colors.surfaceRaised,
-          opacity: disabled ? 0.38 : pressed ? 0.68 : 1,
-          borderColor: row
-            ? "transparent"
-            : selected
-              ? colors.accent
-              : dangerVariant
-                ? colors.danger
-                : filled
-                  ? colors.accent
-                  : colors.border,
-          borderWidth: row || filled || variant === "ghost" ? 0 : 1,
+                  ? colors.danger
+                  : filled
+                    ? colors.accent
+                    : colors.border,
+          borderWidth: row || (filled && !disabled) || variant === "ghost" ? 0 : 1,
           justifyContent: row ? "flex-start" : "center",
           alignItems: "center",
           flexDirection: "row",
@@ -175,11 +185,13 @@ export function Action({
     >
       {icon && <Icon name={icon} size={17} color={textColor} />}
       <Text
-        style={{
-          color: textColor,
-          fontSize: 15,
-          fontWeight: filled || selected ? "700" : "600",
-        }}
+        style={[
+          type.meta,
+          {
+            fontFamily: filled || selected ? font.uiMedium : font.ui,
+            color: textColor,
+          },
+        ]}
       >
         {title}
       </Text>
@@ -229,15 +241,15 @@ export function Field({
         autoCapitalize="none"
         autoCorrect={false}
         style={{
+          ...type.body,
           color: colors.text,
-          fontSize: 16,
-          paddingHorizontal: 14,
-          paddingVertical: 13,
-          minHeight: multiline ? 112 : 50,
+          paddingHorizontal: 12,
+          paddingVertical: 12,
+          minHeight: multiline ? 112 : 48,
           textAlignVertical: multiline ? "top" : "center",
           borderWidth: 1,
-          borderColor: focused ? colors.accent : colors.border,
-          borderRadius: radius.md,
+          borderColor: focused ? colors.focus : colors.border,
+          borderRadius: radius.sm,
           backgroundColor: colors.surfaceInset,
           ...(Platform.OS === "web"
             ? {
@@ -272,14 +284,14 @@ export function Page({
     <View
       style={{
         paddingHorizontal: spacing.xl,
-        paddingTop: spacing.md,
-        gap: spacing.lg,
+        paddingTop: spacing.lg,
+        gap: spacing.xl,
         flex: scroll ? undefined : 1,
       }}
     >
       {header}
       {!!title && (
-        <View style={{ gap: 4, paddingTop: header ? spacing.sm : spacing.md }}>
+        <View style={{ gap: 6, paddingTop: header ? spacing.sm : spacing.md }}>
           <Label variant="display">{title}</Label>
           {subtitle && (
             <Label muted variant="meta">

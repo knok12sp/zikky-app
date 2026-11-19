@@ -9,15 +9,16 @@ import { read, write } from "../../src/db";
 import { useSongs } from "../../src/data";
 import { usePlayback } from "../../src/playback";
 import { matchesSong, stringList } from "../../src/library";
-import { Chip, SectionTitle, Card, EmptyState } from "../../src/kit";
-import { spacing, type } from "../../src/theme";
+import { Segmented, Chip, SectionTitle, EmptyState } from "../../src/kit";
+import { radius, spacing, type } from "../../src/theme";
 
 export default function Search() {
   const { colors } = useTheme();
   const { session } = useSession();
   const player = usePlayback();
-  const [text, setText] = useState("");
-  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<"library" | "online">("library"),
+    [text, setText] = useState(""),
+    [query, setQuery] = useState("");
   const [history, setHistory] = useState<string[]>(() =>
     stringList(read(session!.scope, "search-history", [])),
   );
@@ -31,15 +32,15 @@ export default function Search() {
     const t = setTimeout(() => setQuery(text.trim()), 350);
     return () => clearTimeout(t);
   }, [text]);
-  const waiting = query !== text.trim();
-  const remote = useQuery({
-    queryKey: [session!.scope, "search", query],
-    enabled: query.length >= 2 && !waiting,
+  const waiting = mode === "online" && query !== text.trim();
+  const online = useQuery({
+    queryKey: [session!.scope, "search", mode, query],
+    enabled: mode === "online" && query.length >= 2 && !waiting,
     queryFn: ({ signal }) => session!.api.search(query, signal),
   });
   const saved = (library.data ?? []).filter((s) => matchesSong(s, text));
   const results =
-    query.length >= 2 && !waiting ? (remote.data ?? saved) : saved;
+    mode === "online" ? (waiting ? [] : (online.data ?? [])) : saved;
   function remember(value = text.trim()) {
     if (!value) return;
     const h = [value, ...history.filter((q) => q !== value)].slice(0, 20);
@@ -48,6 +49,14 @@ export default function Search() {
   }
   const header = (
     <View style={{ gap: spacing.md }}>
+      <Segmented
+        options={[
+          { key: "library", title: "My library" },
+          { key: "online", title: "Online" },
+        ]}
+        value={mode}
+        onChange={setMode}
+      />
       <Field
         label="Artist, title or version"
         value={text}
@@ -56,8 +65,9 @@ export default function Search() {
         onSubmit={() => remember()}
       />
       <Text style={[type.meta, { color: colors.faint }]}>
-        Searches the music on your server. Nothing downloads to this phone
-        unless you choose it explicitly.
+        {mode === "library"
+          ? "Instant search across everything saved on your server."
+          : "Searches beyond your saved library. Results play only when you choose one, and nothing downloads to this phone."}
       </Text>
       {!text.trim() && (
         <View style={{ gap: spacing.sm }}>
@@ -82,37 +92,62 @@ export default function Search() {
           )}
         </View>
       )}
-      {text.trim().length === 1 && (
+      {mode === "online" && text.trim().length === 1 && (
         <Text style={[type.meta, { color: colors.muted }]}>
-          Keep typing — server search needs at least two characters.
+          Keep typing — online search needs at least two characters.
         </Text>
       )}
-      {query.length >= 2 && (waiting || remote.isFetching) && (
-        <Busy label="Searching the server" />
+      {mode === "online" && (waiting || online.isFetching) && (
+        <Busy label="Searching online" />
       )}
-      {query.length >= 2 && remote.isError && !waiting && (
-        <Card style={{ borderColor: colors.danger, gap: spacing.sm }}>
+      {mode === "online" && online.isError && !waiting && (
+        <View
+          style={{
+            gap: spacing.sm,
+            borderWidth: 1,
+            borderRadius: radius.sm,
+            borderColor: colors.danger,
+            backgroundColor: colors.dangerSoft,
+            padding: spacing.md,
+          }}
+        >
           <Text style={[type.meta, { color: colors.danger }]}>
-            {remote.error.message}
-          </Text>
-          <Row>
-            <Chip title="Retry search" onPress={() => void remote.refetch()} />
-          </Row>
-        </Card>
-      )}
-      {library.isPending && <Busy label="Reading library" />}
-      {library.isError && (
-        <Card style={{ borderColor: colors.danger, gap: spacing.sm }}>
-          <Text style={[type.meta, { color: colors.danger }]}>
-            {library.error.message} Cached results are shown where available.
+            {online.error.message}
           </Text>
           <Row>
             <Chip
-              title="Retry library"
-              onPress={() => void library.refetch()}
+              title="Retry online search"
+              onPress={() => online.refetch()}
+            />
+            <Chip
+              title={`Show saved-library results (${saved.length})`}
+              onPress={() => setMode("library")}
             />
           </Row>
-        </Card>
+        </View>
+      )}
+      {mode === "library" && library.isPending && (
+        <Busy label="Reading library" />
+      )}
+      {mode === "library" && library.isError && (
+        <View
+          style={{
+            gap: spacing.sm,
+            borderWidth: 1,
+            borderRadius: radius.sm,
+            borderColor: colors.danger,
+            backgroundColor: colors.dangerSoft,
+            padding: spacing.md,
+          }}
+        >
+          <Text style={[type.meta, { color: colors.danger }]}>
+            {library.error.message} Cached library results are shown where
+            available.
+          </Text>
+          <Row>
+            <Chip title="Retry library" onPress={() => library.refetch()} />
+          </Row>
+        </View>
       )}
       {!text.trim() && !history.length && (
         <EmptyState
@@ -129,13 +164,18 @@ export default function Search() {
         songs={results}
         header={header}
         emptyText={
-          query.length >= 2 && (waiting || remote.isFetching)
+          waiting || (mode === "online" && online.isFetching)
             ? "Searching…"
-            : "No matching songs. Try a different artist, title or version."
+            : mode === "online" && query.length < 2
+              ? "Choose an online track deliberately to play or save it."
+              : "No matching songs. Try a different artist, title or version."
         }
         onPlay={(index) => {
           remember();
-          void player.select(results, index);
+          void player.select(
+            mode === "online" ? [results[index]!] : results,
+            mode === "online" ? 0 : index,
+          );
         }}
       />
     </Page>

@@ -10,10 +10,17 @@ import { useQuery } from "@tanstack/react-query";
 import type { Book, BookDetail } from "../api";
 import { claimAudio, onAudioOwnerChange } from "../audio-owner";
 import { Icon } from "../icon";
+import {
+  Chip,
+  EmptyState,
+  IconButton,
+  PageHeader,
+  SectionTitle,
+} from "../kit";
 import { usePlayback } from "../playback";
 import { useSession } from "../session";
-import { radius, spacing, type } from "../theme";
-import { useTheme } from "../ui";
+import { breakpoints, font, radius, spacing, type } from "../theme";
+import { Busy, useTheme } from "../ui";
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -200,82 +207,121 @@ export function DesktopBooks() {
     : 0;
   const mine = active && book && active.book.id === book.id;
   const currentChapter = mine ? active!.book.chapters[active!.index] : null;
-  const columns = width >= 1500 ? 5 : width >= 1180 ? 4 : 3;
-  const card = Math.max(150, Math.floor((width - 300) / columns) - spacing.lg);
+  const books = list.data?.books ?? [];
+  const compact = width < breakpoints.compact;
 
   if (!openId) {
     return (
       <>
-        <View style={{ gap: spacing.xs }}>
-          <Text style={{ color: colors.text, ...type.display }}>
-            Audiobooks
-          </Text>
-          <Text style={{ color: colors.muted, ...type.meta }}>
-            {list.data?.books.length
-              ? `${list.data.books.length} books on your server`
-              : "Add folders to audiobooks/Author/Title and rescan from Manage."}
-          </Text>
-        </View>
-        <View
-          style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg }}
-        >
-          {(list.data?.books ?? []).map((item: Book) => (
-            <Pressable
-              key={item.id}
-              onPress={() => setOpenId(item.id)}
-              style={{
-                width: card,
-                gap: spacing.sm,
-                padding: spacing.sm,
-                borderRadius: radius.lg,
-                backgroundColor: colors.surface,
-              }}
-            >
-              {item.hasCover ? (
-                <Image
-                  source={{ uri: session!.api.bookCoverUrl(item.id) }}
-                  style={{
-                    width: "100%",
-                    aspectRatio: 1,
-                    borderRadius: radius.md,
-                  }}
-                />
-              ) : (
-                <View
-                  style={{
-                    width: "100%",
-                    aspectRatio: 1,
-                    borderRadius: radius.md,
-                    backgroundColor: colors.accentSoft,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Text style={{ color: colors.accent, fontSize: 44 }}>
-                    {item.title.slice(0, 1)}
+        <PageHeader
+          title="Audiobooks"
+          subtitle={
+            list.data
+              ? books.length
+                ? `${books.length} ${books.length === 1 ? "book" : "books"} on your server`
+                : "No books on your server"
+              : undefined
+          }
+        />
+        {!list.data ? (
+          list.error ? (
+            <EmptyState
+              icon="server"
+              title="Could not load audiobooks"
+              message="Check your connection, then try this view again."
+              action="Try again"
+              onAction={() => list.refetch()}
+            />
+          ) : (
+            <Busy label="Loading audiobooks" />
+          )
+        ) : books.length ? (
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: spacing.lg,
+            }}
+          >
+            {books.map((item: Book) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.title} by ${item.author}, ${
+                  item.progress
+                    ? `continue chapter ${(item.progress.chapterIndex ?? 0) + 1}`
+                    : `${item.chapterCount} chapters`
+                }`}
+                onPress={() => setOpenId(item.id)}
+                style={({ pressed }) => ({
+                  width: 172,
+                  gap: spacing.sm,
+                  opacity: pressed ? 0.65 : 1,
+                })}
+              >
+                {item.hasCover ? (
+                  <Image
+                    accessibilityLabel={`Cover of ${item.title}`}
+                    source={{ uri: session!.api.bookCoverUrl(item.id) }}
+                    style={{
+                      width: "100%",
+                      aspectRatio: 1,
+                      borderRadius: radius.sm,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: "100%",
+                      aspectRatio: 1,
+                      borderRadius: radius.sm,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.accentSoft,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Icon name="note" size={40} color={colors.faint} />
+                  </View>
+                )}
+                <View style={{ gap: 2 }}>
+                  <View style={{ minHeight: 44 }}>
+                    <Text
+                      numberOfLines={2}
+                      style={{
+                        color: colors.text,
+                        ...type.meta,
+                        fontFamily: font.uiMedium,
+                      }}
+                    >
+                      {item.title}
+                    </Text>
+                  </View>
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: colors.muted, ...type.meta }}
+                  >
+                    {item.author}
+                  </Text>
+                  <Text style={{ color: colors.faint, ...type.micro }}>
+                    {item.progress
+                      ? `Continue · chapter ${(item.progress.chapterIndex ?? 0) + 1}`
+                      : `${item.chapterCount} chapters · ${clock(item.duration)}`}
                   </Text>
                 </View>
-              )}
-              <Text
-                numberOfLines={1}
-                style={{ color: colors.text, ...type.body }}
-              >
-                {item.title}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={{ color: colors.muted, ...type.meta }}
-              >
-                {item.author}
-              </Text>
-              <Text style={{ color: colors.faint, ...type.micro }}>
-                {item.progress
-                  ? `Continue · chapter ${(item.progress.chapterIndex ?? 0) + 1}`
-                  : `${item.chapterCount} chapters · ${clock(item.duration)}`}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <EmptyState
+            icon="note"
+            title="No audiobooks yet"
+            message="Add folders to audiobooks/Author/Title and rescan from Manage."
+          />
+        )}
       </>
     );
   }
@@ -283,8 +329,17 @@ export function DesktopBooks() {
   return (
     <>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="All audiobooks"
         onPress={() => setOpenId(null)}
-        style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
+        style={({ pressed }) => ({
+          alignSelf: "flex-start",
+          minHeight: 44,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.sm,
+          opacity: pressed ? 0.6 : 1,
+        })}
       >
         <Icon name="chevronLeft" size={16} color={colors.muted} />
         <Text style={{ color: colors.muted, ...type.meta }}>
@@ -292,37 +347,62 @@ export function DesktopBooks() {
         </Text>
       </Pressable>
       {!book ? (
-        <Text style={{ color: colors.muted, ...type.body }}>
-          {detail.error
-            ? "Could not load book. Open All audiobooks and try again."
-            : "Loading…"}
-        </Text>
+        detail.error ? (
+          <EmptyState
+            icon="server"
+            title="Could not load this book"
+            message="Check your connection, then try again."
+            action="Try again"
+            onAction={() => detail.refetch()}
+          />
+        ) : (
+          <Busy label="Loading book" />
+        )
       ) : (
         <>
-          <View style={{ flexDirection: "row", gap: spacing.xxl }}>
+          <View
+            style={{
+              flexDirection: compact ? "column" : "row",
+              gap: spacing.xxl,
+            }}
+          >
             {book.hasCover ? (
               <Image
+                accessibilityLabel={`Cover of ${book.title}`}
                 source={{ uri: session!.api.bookCoverUrl(book.id) }}
-                style={{ width: 220, height: 220, borderRadius: radius.lg }}
+                style={{
+                  width: compact ? "100%" : 168,
+                  maxWidth: compact ? 260 : undefined,
+                  aspectRatio: 1,
+                  borderRadius: radius.sm,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                }}
               />
             ) : (
               <View
                 style={{
-                  width: 220,
-                  height: 220,
-                  borderRadius: radius.lg,
+                  width: compact ? "100%" : 168,
+                  maxWidth: compact ? 260 : undefined,
+                  aspectRatio: 1,
+                  borderRadius: radius.sm,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
                   backgroundColor: colors.accentSoft,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Text style={{ color: colors.accent, fontSize: 64 }}>
-                  {book.title.slice(0, 1)}
-                </Text>
+                <Icon name="note" size={56} color={colors.faint} />
               </View>
             )}
             <View
-              style={{ flex: 1, gap: spacing.sm, justifyContent: "center" }}
+              style={{
+                flex: 1,
+                gap: spacing.sm,
+                justifyContent: "center",
+                paddingVertical: spacing.sm,
+              }}
             >
               <Text style={{ color: colors.text, ...type.display }}>
                 {book.title}
@@ -336,54 +416,80 @@ export function DesktopBooks() {
                   ? ` · saved at chapter ${resumeIndex + 1}, ${clock(progress.position)}`
                   : ""}
               </Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: spacing.md,
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  mine && playing
+                    ? "Pause audiobook"
+                    : progress
+                      ? "Continue audiobook"
+                      : "Play audiobook"
+                }
+                onPress={() =>
+                  mine
+                    ? toggle()
+                    : start(book, resumeIndex, progress?.position ?? 0)
+                }
+                style={({ pressed }) => ({
+                  alignSelf: "flex-start",
                   marginTop: spacing.sm,
-                }}
+                  minHeight: 48,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.sm,
+                  paddingHorizontal: spacing.xl,
+                  borderRadius: radius.sm,
+                  backgroundColor: colors.accent,
+                  opacity: pressed ? 0.7 : 1,
+                })}
               >
-                <Pressable
-                  onPress={() =>
-                    mine
-                      ? toggle()
-                      : start(book, resumeIndex, progress?.position ?? 0)
-                  }
+                <Icon
+                  name={mine && playing ? "pause" : "play"}
+                  size={16}
+                  color={colors.onAccent}
+                />
+                <Text
                   style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: spacing.sm,
-                    paddingVertical: spacing.md,
-                    paddingHorizontal: spacing.xl,
-                    borderRadius: radius.pill,
-                    backgroundColor: colors.accent,
+                    color: colors.onAccent,
+                    ...type.meta,
+                    fontFamily: font.uiMedium,
                   }}
                 >
-                  <Icon
-                    name={mine && playing ? "pause" : "play"}
-                    size={16}
-                    color={colors.onAccent}
-                  />
-                  <Text style={{ color: colors.onAccent, ...type.meta }}>
-                    {mine && playing ? "Pause" : progress ? "Continue" : "Play"}
-                  </Text>
-                </Pressable>
-              </View>
+                  {mine && playing ? "Pause" : progress ? "Continue" : "Play"}
+                </Text>
+              </Pressable>
             </View>
           </View>
 
           {mine && currentChapter ? (
             <View
               style={{
-                padding: spacing.lg,
-                borderRadius: radius.lg,
-                backgroundColor: colors.surface,
                 gap: spacing.md,
+                padding: spacing.lg,
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: radius.sm,
+                backgroundColor: colors.surfaceInset,
               }}
             >
-              <Text style={{ color: colors.text, ...type.heading }}>
-                {currentChapter.title}
-              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  gap: spacing.md,
+                }}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={{ flex: 1, color: colors.text, ...type.heading }}
+                >
+                  {currentChapter.title}
+                </Text>
+                <Text style={{ color: colors.faint, ...type.numeric }}>
+                  {clock(position)} / {clock(currentChapter.duration)}
+                </Text>
+              </View>
               <input
                 type="range"
                 aria-label="Chapter position"
@@ -402,90 +508,41 @@ export function DesktopBooks() {
                   setPosition(value);
                 }}
               />
-              <label style={{ color: colors.muted }}>
-                Volume · {Math.round(volume * 100)}%
-                <input
-                  type="range"
-                  aria-label="Audiobook volume"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={volume}
-                  onChange={(event) => setVolume(Number(event.target.value))}
-                  style={{
-                    width: "100%",
-                    minHeight: 44,
-                    accentColor: colors.accent,
-                  }}
-                />
-              </label>
-              <label style={{ color: colors.muted }}>
-                Sleep timer{" "}
-                <select
-                  aria-label="Sleep timer"
-                  value={sleepMinutes}
-                  onChange={(event) =>
-                    setSleepMinutes(Number(event.target.value))
-                  }
-                  style={{ minHeight: 44 }}
-                >
-                  {[0, 15, 30, 60].map((m) => (
-                    <option key={m} value={m}>
-                      {m ? `${m} minutes` : "Off"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {!!error && (
-                <Text accessibilityRole="alert" style={{ color: colors.muted }}>
-                  {error}
-                </Text>
-              )}
               <View
                 style={{
                   flexDirection: "row",
-                  flexWrap: "wrap",
                   alignItems: "center",
-                  gap: spacing.lg,
+                  flexWrap: "wrap",
+                  gap: spacing.xs,
                 }}
               >
-                <Text style={{ color: colors.faint, ...type.numeric }}>
-                  {clock(position)} / {clock(currentChapter.duration)}
-                </Text>
-                <Pressable
+                <IconButton
+                  name="previous"
+                  label="Previous chapter"
+                  iconSize={18}
                   onPress={() => start(book, Math.max(0, active!.index - 1), 0)}
-                  accessibilityLabel="Previous chapter"
-                >
-                  <Icon name="previous" size={18} color={colors.text} />
-                </Pressable>
-                <Pressable
+                />
+                <IconButton
+                  name="retry"
+                  label="Back 15 seconds"
+                  iconSize={16}
                   onPress={() => {
                     const el = audio.current;
                     if (el) el.currentTime = Math.max(0, el.currentTime - 15);
                   }}
-                  accessibilityLabel="Back 15 seconds"
-                >
-                  <Icon name="retry" size={16} color={colors.text} />
-                </Pressable>
-                <Pressable
+                />
+                <IconButton
+                  name={playing ? "pause" : "play"}
+                  label={playing ? "Pause" : "Play"}
+                  variant="filled"
+                  size={44}
+                  iconSize={18}
                   onPress={() => toggle()}
-                  accessibilityLabel={playing ? "Pause" : "Play"}
-                  style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: radius.pill,
-                    backgroundColor: colors.accent,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Icon
-                    name={playing ? "pause" : "play"}
-                    size={16}
-                    color={colors.onAccent}
-                  />
-                </Pressable>
-                <Pressable
+                />
+                <IconButton
+                  name="repeat"
+                  label="Forward 30 seconds"
+                  iconSize={16}
                   onPress={() => {
                     const el = audio.current;
                     if (!el) return;
@@ -494,49 +551,147 @@ export function DesktopBooks() {
                       el.currentTime + 30,
                     );
                   }}
-                  accessibilityLabel="Forward 30 seconds"
-                >
-                  <Icon name="repeat" size={16} color={colors.text} />
-                </Pressable>
-                <Pressable
+                />
+                <IconButton
+                  name="next"
+                  label="Next chapter"
+                  iconSize={18}
                   onPress={() => start(book, active!.index + 1, 0)}
-                  accessibilityLabel="Next chapter"
+                />
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: spacing.sm,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.muted,
+                    ...type.meta,
+                    marginRight: spacing.xs,
+                  }}
                 >
-                  <Icon name="next" size={18} color={colors.text} />
-                </Pressable>
-                <View style={{ flex: 1 }} />
+                  Speed
+                </Text>
                 {RATES.map((value) => (
-                  <Pressable key={value} onPress={() => setRate(value)}>
-                    <Text
-                      style={{
-                        color: value === rate ? colors.accent : colors.faint,
-                        ...type.micro,
-                      }}
-                    >
-                      {value}×
-                    </Text>
-                  </Pressable>
+                  <Chip
+                    key={value}
+                    title={`${value}×`}
+                    label={`Playback speed ${value} times`}
+                    active={value === rate}
+                    onPress={() => setRate(value)}
+                  />
                 ))}
               </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: spacing.lg,
+                }}
+              >
+                <label
+                  style={{
+                    flex: 1,
+                    minWidth: 200,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: spacing.xs,
+                    color: colors.muted,
+                    fontSize: type.meta.fontSize,
+                    fontFamily: font.uiMedium,
+                  }}
+                >
+                  Volume · {Math.round(volume * 100)}%
+                  <input
+                    type="range"
+                    aria-label="Audiobook volume"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={volume}
+                    onChange={(event) => setVolume(Number(event.target.value))}
+                    style={{
+                      width: "100%",
+                      minHeight: 44,
+                      accentColor: colors.accent,
+                    }}
+                  />
+                </label>
+                <label
+                  style={{
+                    minWidth: 180,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: spacing.xs,
+                    color: colors.muted,
+                    fontSize: type.meta.fontSize,
+                    fontFamily: font.uiMedium,
+                  }}
+                >
+                  Sleep timer
+                  <select
+                    aria-label="Sleep timer"
+                    value={sleepMinutes}
+                    onChange={(event) =>
+                      setSleepMinutes(Number(event.target.value))
+                    }
+                    style={{
+                      minHeight: 44,
+                      paddingLeft: spacing.md,
+                      paddingRight: spacing.md,
+                      borderRadius: radius.sm,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceInset,
+                      color: colors.text,
+                      fontSize: type.meta.fontSize,
+                    }}
+                  >
+                    {[0, 15, 30, 60].map((m) => (
+                      <option key={m} value={m}>
+                        {m ? `${m} minutes` : "Off"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </View>
+              {!!error && (
+                <Text
+                  accessibilityRole="alert"
+                  style={{ color: colors.danger, ...type.meta }}
+                >
+                  {error}
+                </Text>
+              )}
             </View>
           ) : null}
 
           <View style={{ gap: spacing.xs }}>
+            <SectionTitle title="Chapters" />
             {book.chapters.map((chapter, index) => {
-              const on = mine && active!.index === index;
+              const on = !!(mine && active!.index === index);
               return (
                 <Pressable
                   key={chapter.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Play chapter ${index + 1}, ${chapter.title}${on ? ", playing now" : ""}`}
                   onPress={() => start(book, index, 0)}
-                  style={{
+                  style={({ pressed }) => ({
+                    minHeight: 48,
                     flexDirection: "row",
                     alignItems: "center",
                     gap: spacing.md,
                     paddingVertical: spacing.sm,
                     paddingHorizontal: spacing.md,
-                    borderRadius: radius.md,
                     backgroundColor: on ? colors.accentSoft : "transparent",
-                  }}
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                    opacity: pressed ? 0.65 : 1,
+                  })}
                 >
                   <Text
                     style={{

@@ -6,25 +6,24 @@ import {
   Page,
   Action,
   Row,
-  Label,
   Field,
   Busy,
   report,
   confirm,
   useTheme,
 } from "../src/ui";
-import { SongList, Art, duration } from "../src/components";
+import { SongList, Art } from "../src/components";
 import { useSession, queryClient } from "../src/session";
 import { usePlayback } from "../src/playback";
-import { useSongs } from "../src/data";
+import { usePlaylists, useSongs } from "../src/data";
 import { Song, parseSongs } from "../src/api";
 import { read, write } from "../src/db";
 import { completedSongs, watchDownloads } from "../src/offline";
 import { collectionSongs } from "../src/library";
 import { collectionDownloads } from "../src/download-policy";
-import { IconButton, Card, SectionTitle, Banner } from "../src/kit";
+import { IconButton, SectionTitle, Banner } from "../src/kit";
 import { Icon } from "../src/icon";
-import { spacing, type } from "../src/theme";
+import { radius, spacing, type } from "../src/theme";
 export default function Collection() {
   const { colors } = useTheme();
   const { session } = useSession();
@@ -44,18 +43,20 @@ export default function Collection() {
   const [, tick] = useState(0);
   useEffect(() => watchDownloads(() => tick((v) => v + 1)), []);
   const library = useSongs();
+  const playlists = usePlaylists(kind === "playlist" && !id?.startsWith("bridge_"));
   const playlistKey = [session!.scope, "playlist", id];
-  const smart = id?.startsWith("smart_");
   const playlist = useQuery<Song[]>({
     queryKey: playlistKey,
     enabled: kind === "playlist" && !offline,
     queryFn: async ({ signal }) => {
-      const songs = smart
-        ? await session!.api.smart(id!, signal)
-        : parseSongs(
-            (await session!.api.rest("getPlaylist", { id }, signal)).playlist
-              ?.entry,
-          );
+      const data = await session!.api.rest(
+        id === "bridge_favorites" ? "getStarred2" : "getPlaylist",
+        id === "bridge_favorites" ? {} : { id },
+        signal,
+      );
+      const songs = parseSongs(
+        id === "bridge_favorites" ? data.starred2?.song : data.playlist?.entry,
+      );
       write(session!.scope, "playlist:" + id, songs);
       return songs;
     },
@@ -80,8 +81,10 @@ export default function Collection() {
     id,
     offline ? new Set(downloaded.map((s) => s.id)) : undefined,
   );
-  const discovery = id === "smart_discover";
-  const editable = kind === "playlist" && !smart && !offline;
+  const smart = id?.startsWith("bridge_");
+  const discovery = id === "bridge_discover";
+  const editable =
+    kind === "playlist" && !smart && !offline;
   const phone = collectionDownloads(songs, session!.offline.list());
   const total = songs.reduce((sum, song) => sum + song.duration, 0);
   async function run(fn: () => Promise<unknown>) {
@@ -129,7 +132,7 @@ export default function Collection() {
           ]}
         >
           {smart
-            ? "Collection"
+            ? "Smart collection"
             : discovery
               ? "Discovery"
               : kind === "playlist"
@@ -151,13 +154,13 @@ export default function Collection() {
 
       <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 14 }}>
         {songs[0] ? (
-          <Art song={songs[0]} size={92} radius={12} />
+          <Art song={songs[0]} size={92} radius={2} />
         ) : (
           <View
             style={{
               width: 92,
               height: 92,
-              borderRadius: 12,
+              borderRadius: radius.sm,
               backgroundColor: colors.surfaceInset,
               alignItems: "center",
               justifyContent: "center",
@@ -251,7 +254,15 @@ export default function Collection() {
       )}
 
       {editable && editing && (
-        <Card inset padding={spacing.md} style={{ gap: spacing.sm }}>
+        <View
+          style={{
+            gap: spacing.md,
+            borderTopWidth: 1,
+            borderBottomWidth: 1,
+            borderColor: colors.border,
+            paddingVertical: spacing.lg,
+          }}
+        >
           <SectionTitle title="Playlist settings" />
           <Field
             label="Playlist name"
@@ -297,7 +308,7 @@ export default function Collection() {
               }
             />
           </Row>
-        </Card>
+        </View>
       )}
 
       {current.isPending && !offline && <Busy label="Loading collection" />}
@@ -360,7 +371,7 @@ export default function Collection() {
                           id,
                           index,
                           index - 1,
-                          songs.map((song) => song.id),
+                          next.map((song) => song.id),
                         );
                         await updateCache(next);
                       })
@@ -380,7 +391,7 @@ export default function Collection() {
                           id,
                           index,
                           index + 1,
-                          songs.map((song) => song.id),
+                          next.map((song) => song.id),
                         );
                         await updateCache(next);
                       })
@@ -392,7 +403,10 @@ export default function Collection() {
                     disabled={working}
                     onPress={() =>
                       run(async () => {
-                        await session!.api.removePlaylistTrack(id, index);
+                        await session!.api.removePlaylistTrack(
+                          id,
+                          index,
+                        );
                         await updateCache(songs.filter((_, i) => i !== index));
                       })
                     }

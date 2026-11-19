@@ -6,7 +6,7 @@ import { Art } from "../src/components";
 import { useTheme, confirm } from "../src/ui";
 import { Icon } from "../src/icon";
 import { BackButton, EmptyState, IconButton, SectionTitle } from "../src/kit";
-import { radius, spacing, type } from "../src/theme";
+import { spacing, type, font } from "../src/theme";
 
 export default function Queue() {
   const p = usePlayback();
@@ -85,14 +85,11 @@ export default function Queue() {
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                gap: spacing.md,
-                paddingVertical: 6,
-                paddingLeft: current ? 8 : 0,
-                borderLeftWidth: current ? 2 : 0,
-                borderLeftColor: colors.accent,
+                gap: spacing.sm,
+                paddingVertical: 4,
+                borderBottomWidth: 1,
+                borderColor: colors.border,
                 backgroundColor: current ? colors.accentSoft : "transparent",
-                borderRadius: radius.sm,
-                marginBottom: 2,
               }}
             >
               <Pressable
@@ -116,15 +113,15 @@ export default function Queue() {
                     </Text>
                   )}
                 </View>
-                <Art song={item.song} size={44} radius={8} />
+                <Art song={item.song} size={40} radius={2} />
                 <View style={{ flex: 1 }}>
                   <Text
                     numberOfLines={1}
                     style={[
-                      type.body,
+                      type.meta,
                       {
                         color: current ? colors.accent : colors.text,
-                        fontWeight: "600",
+                        fontFamily: font.uiMedium,
                       },
                     ]}
                   >

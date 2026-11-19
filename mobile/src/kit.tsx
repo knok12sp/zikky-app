@@ -1,10 +1,18 @@
 import React from "react";
-import { Pressable, Text, View, ActivityIndicator } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { router } from "expo-router";
-import { useTheme, Label, report } from "./ui";
+import { useTheme, report } from "./ui";
 import { Icon, IconName } from "./icon";
-import { radius, spacing, type } from "./theme";
+import { font, radius, spacing, type } from "./theme";
 
+/** A plate: hairline edge, near-flat surface. Never a floating card. */
 export function Card({
   children,
   style,
@@ -22,7 +30,7 @@ export function Card({
       style={[
         {
           backgroundColor: inset ? colors.surfaceInset : colors.surface,
-          borderRadius: radius.lg,
+          borderRadius: radius.md,
           borderWidth: 1,
           borderColor: colors.border,
           padding,
@@ -49,9 +57,12 @@ export function SectionTitle({
     <View
       style={{
         flexDirection: "row",
-        alignItems: "center",
+        alignItems: "baseline",
         justifyContent: "space-between",
         gap: spacing.md,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+        paddingBottom: spacing.sm,
       }}
     >
       <Text
@@ -67,7 +78,7 @@ export function SectionTitle({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={action}
-          hitSlop={8}
+          hitSlop={10}
           onPress={() => {
             try {
               void Promise.resolve(onAction()).catch(report);
@@ -77,12 +88,174 @@ export function SectionTitle({
           }}
         >
           <Text
-            style={{ ...type.meta, color: colors.accent, fontWeight: "700" }}
+            style={[
+              type.micro,
+              { color: colors.accent, textTransform: "uppercase" },
+            ]}
           >
             {action}
           </Text>
         </Pressable>
       )}
+    </View>
+  );
+}
+
+export function PageHeader({
+  title,
+  subtitle,
+  query = "",
+  onQuery,
+  showSearch = false,
+  actions,
+}: {
+  title: string;
+  subtitle?: string;
+  query?: string;
+  onQuery?: (value: string) => void;
+  showSearch?: boolean;
+  actions?: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  const [focused, setFocused] = React.useState(false);
+  return (
+    <View style={{ gap: spacing.lg, paddingBottom: spacing.md }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: spacing.xl,
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+          <Text
+            accessibilityRole="header"
+            style={[type.hero, { color: colors.text }]}
+          >
+            {title}
+          </Text>
+          {!!subtitle && (
+            <Text style={[type.meta, { color: colors.muted }]}>{subtitle}</Text>
+          )}
+        </View>
+        {actions}
+        {showSearch && !!onQuery && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.sm,
+              width: 300,
+              minHeight: 44,
+              borderRadius: radius.sm,
+              borderWidth: 1,
+              borderColor: focused ? colors.focus : colors.border,
+              backgroundColor: colors.surfaceInset,
+              paddingHorizontal: spacing.md,
+            }}
+          >
+            <Icon name="search" size={16} color={colors.faint} />
+            <TextInput
+              accessibilityLabel={`Search ${title.toLowerCase()}`}
+              placeholder="Search this view"
+              placeholderTextColor={colors.faint}
+              value={query}
+              onChangeText={onQuery}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              style={{
+                flex: 1,
+                color: colors.text,
+                ...type.meta,
+                ...(Platform.OS === "web"
+                  ? {
+                      outlineStyle: "solid" as const,
+                      outlineWidth: 0,
+                      outlineColor: "transparent",
+                    }
+                  : {}),
+              }}
+            />
+            {!!query && (
+              <IconButton
+                name="close"
+                label="Clear search"
+                onPress={() => onQuery("")}
+                size={24}
+                iconSize={12}
+              />
+            )}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+export function NavGroup({
+  title,
+  children,
+}: {
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ gap: 2, marginTop: title ? spacing.lg : 0 }}>
+      {!!title && (
+        <Text
+          style={[
+            type.micro,
+            {
+              color: colors.faint,
+              textTransform: "uppercase",
+              paddingHorizontal: spacing.md,
+              paddingBottom: spacing.xs,
+            },
+          ]}
+        >
+          {title}
+        </Text>
+      )}
+      {children}
+    </View>
+  );
+}
+
+export function SongTable({
+  showAlbum = true,
+  trailing = 100,
+  children,
+}: {
+  showAlbum?: boolean;
+  trailing?: number;
+  children: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  const heading = { ...type.micro, color: colors.faint };
+  return (
+    <View>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.md,
+          paddingHorizontal: 8,
+          paddingBottom: spacing.sm,
+          borderBottomWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        <Text style={[heading, { width: 24 }]}>NO</Text>
+        <View style={{ width: 44 }} />
+        <Text style={[heading, { flex: 1, minWidth: 120 }]}>TITLE</Text>
+        {showAlbum && <Text style={[heading, { flex: 0.7 }]}>ALBUM</Text>}
+        <Text style={[heading, { width: 52, textAlign: "right" }]}>RATED</Text>
+        <Text style={[heading, { width: 48, textAlign: "right" }]}>TIME</Text>
+        <View style={{ width: Math.max(0, trailing - spacing.md) }} />
+      </View>
+      {children}
     </View>
   );
 }
@@ -140,7 +313,7 @@ export function IconButton({
         minHeight: size,
         width: size,
         height: size,
-        borderRadius: size / 2,
+        borderRadius: radius.sm,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor:
@@ -152,8 +325,8 @@ export function IconButton({
                 ? colors.surfaceRaised
                 : "transparent",
         borderWidth: variant === "outline" ? 1 : 0,
-        borderColor: colors.border,
-        opacity: disabled ? 0.35 : pressed ? 0.6 : 1,
+        borderColor: active ? colors.accent : colors.border,
+        opacity: disabled ? 0.35 : pressed ? 0.55 : 1,
       })}
     >
       {busy ? (
@@ -170,6 +343,7 @@ export function IconButton({
   );
 }
 
+/** The one primary action: an amber plate with a dark glyph. */
 export function PlayButton({
   playing,
   busy,
@@ -202,16 +376,12 @@ export function PlayButton({
       style={({ pressed }) => ({
         width: size,
         height: size,
-        borderRadius: size / 2,
+        borderRadius: radius.md,
         backgroundColor: colors.accent,
         alignItems: "center",
         justifyContent: "center",
-        transform: [{ scale: pressed ? 0.95 : 1 }],
+        transform: [{ scale: pressed ? 0.96 : 1 }],
         opacity: busy ? 0.7 : 1,
-        shadowColor: colors.accent,
-        shadowOpacity: 0.28,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 6 },
       })}
     >
       {busy ? (
@@ -219,7 +389,7 @@ export function PlayButton({
       ) : (
         <Icon
           name={playing ? "pause" : "play"}
-          size={Math.round(size * 0.42)}
+          size={Math.round(size * 0.4)}
           color={colors.onAccent}
         />
       )}
@@ -255,16 +425,16 @@ export function Chip({
       }}
       style={({ pressed }) => ({
         minHeight: 44,
-        paddingHorizontal: 14,
+        paddingHorizontal: 12,
         justifyContent: "center",
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        borderRadius: radius.pill,
-        backgroundColor: active ? colors.accentSoft : colors.surface,
+        borderRadius: radius.sm,
+        backgroundColor: active ? colors.accentSoft : "transparent",
         borderWidth: 1,
         borderColor: active ? colors.accent : colors.border,
-        opacity: pressed ? 0.65 : 1,
+        opacity: pressed ? 0.6 : 1,
       })}
     >
       {icon && (
@@ -275,11 +445,13 @@ export function Chip({
         />
       )}
       <Text
-        style={{
-          ...type.meta,
-          color: active ? colors.accent : colors.muted,
-          fontWeight: active ? "700" : "600",
-        }}
+        style={[
+          type.micro,
+          {
+            color: active ? colors.accent : colors.muted,
+            textTransform: "uppercase",
+          },
+        ]}
       >
         {title}
       </Text>
@@ -301,8 +473,8 @@ export function Segmented<T extends string>({
     <View
       style={{
         flexDirection: "row",
-        padding: 4,
-        borderRadius: radius.pill,
+        padding: 2,
+        borderRadius: radius.sm,
         backgroundColor: colors.surfaceInset,
         borderWidth: 1,
         borderColor: colors.border,
@@ -325,19 +497,23 @@ export function Segmented<T extends string>({
             }}
             style={{
               flex: 1,
-              minHeight: 40,
-              borderRadius: radius.pill,
+              minHeight: 38,
+              borderRadius: radius.sm,
               alignItems: "center",
               justifyContent: "center",
               backgroundColor: active ? colors.surfaceRaised : "transparent",
+              borderWidth: 1,
+              borderColor: active ? colors.borderStrong : "transparent",
             }}
           >
             <Text
-              style={{
-                ...type.meta,
-                color: active ? colors.text : colors.muted,
-                fontWeight: active ? "700" : "500",
-              }}
+              style={[
+                type.micro,
+                {
+                  color: active ? colors.text : colors.muted,
+                  textTransform: "uppercase",
+                },
+              ]}
             >
               {option.title}
             </Text>
@@ -351,7 +527,7 @@ export function Segmented<T extends string>({
 export function ProgressBar({
   value,
   tone,
-  height = 4,
+  height = 3,
 }: {
   value: number;
   tone?: string;
@@ -363,7 +539,6 @@ export function ProgressBar({
     <View
       style={{
         height,
-        borderRadius: height,
         backgroundColor: colors.border,
         overflow: "hidden",
       }}
@@ -372,7 +547,6 @@ export function ProgressBar({
         style={{
           width: `${clamped * 100}%`,
           height: "100%",
-          borderRadius: height,
           backgroundColor: tone ?? colors.accent,
         }}
       />
@@ -403,25 +577,25 @@ export function Banner({
         gap: spacing.md,
         backgroundColor:
           tone === "danger" ? colors.dangerSoft : colors.accentSoft,
-        borderRadius: radius.md,
+        borderRadius: radius.sm,
         borderWidth: 1,
         borderColor: tone === "danger" ? colors.danger : colors.border,
         padding: spacing.md,
       }}
     >
-      <View style={{ paddingTop: 2 }}>
+      <View style={{ paddingTop: 3 }}>
         <Icon
           name={tone === "danger" ? "close" : "check"}
-          size={14}
+          size={13}
           color={tint}
         />
       </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ ...type.meta, color: tint, fontWeight: "700" }}>
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={[type.micro, { color: tint, textTransform: "uppercase" }]}>
           {title}
         </Text>
         {!!message && (
-          <Text style={{ ...type.meta, color: colors.muted }}>{message}</Text>
+          <Text style={[type.meta, { color: colors.muted }]}>{message}</Text>
         )}
         {!!action && !!onAction && (
           <Pressable
@@ -431,7 +605,12 @@ export function Banner({
             onPress={onAction}
             style={{ paddingTop: 6 }}
           >
-            <Text style={{ ...type.meta, color: tint, fontWeight: "700" }}>
+            <Text
+              style={[
+                type.micro,
+                { color: tint, textTransform: "uppercase" },
+              ]}
+            >
               {action}
             </Text>
           </Pressable>
@@ -457,34 +636,35 @@ export function EmptyState({
   const { colors } = useTheme();
   return (
     <View
-      style={{ alignItems: "center", gap: spacing.sm, paddingVertical: 40 }}
+      style={{
+        alignItems: "center",
+        gap: spacing.sm,
+        paddingVertical: 56,
+        paddingHorizontal: spacing.lg,
+      }}
     >
-      <View
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: 26,
-          backgroundColor: colors.surfaceInset,
-          borderWidth: 1,
-          borderColor: colors.border,
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: 4,
-        }}
+      <Icon name={icon} size={20} color={colors.faint} />
+      <Text
+        style={[
+          type.body,
+          {
+            color: colors.text,
+            textAlign: "center",
+            fontFamily: font.uiMedium,
+          },
+        ]}
       >
-        <Icon name={icon} size={22} color={colors.faint} />
-      </View>
-      <Label variant="heading" style={{ textAlign: "center" }}>
         {title}
-      </Label>
+      </Text>
       {!!message && (
-        <Label
-          muted
-          variant="meta"
-          style={{ textAlign: "center", maxWidth: 300 }}
+        <Text
+          style={[
+            type.meta,
+            { color: colors.muted, textAlign: "center", maxWidth: 300 },
+          ]}
         >
           {message}
-        </Label>
+        </Text>
       )}
       {!!action && !!onAction && (
         <View style={{ marginTop: spacing.sm }}>
@@ -500,8 +680,42 @@ export function BackButton({ onPress }: { onPress?: () => unknown }) {
     <IconButton
       name="chevronLeft"
       label="Back"
-      iconSize={30}
+      iconSize={22}
       onPress={onPress ?? (() => router.back())}
     />
+  );
+}
+
+/** Hairline separator, the only divider in the system. */
+export function Rule({ style }: { style?: object }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[{ height: 1, backgroundColor: colors.border }, style]} />
+  );
+}
+
+/** Mono readout: elapsed / remaining / counters. */
+export function Readout({
+  children,
+  color,
+  size = "readout",
+}: {
+  children: React.ReactNode;
+  color?: string;
+  size?: "numeric" | "readout" | "micro";
+}) {
+  const { colors } = useTheme();
+  return (
+    <Text
+      style={[
+        type[size],
+        {
+          fontFamily: size === "micro" ? font.monoMedium : font.mono,
+          color: color ?? colors.text,
+        },
+      ]}
+    >
+      {children}
+    </Text>
   );
 }
